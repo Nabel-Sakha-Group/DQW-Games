@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react"
 import GameBoard from "@/components/game/game-board"
 import { Leaderboard, type LeaderboardEntry } from "@/components/game/leaderboard"
-import { supabase } from "@/lib/supabaseClient"
+import { getSupabase } from "@/lib/supabaseClient"
 
 export default function Page() {
   const [entries, setEntries] = useState<LeaderboardEntry[]>([])
@@ -19,6 +19,12 @@ export default function Page() {
       console.warn("Supabase env is missing. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY and restart dev server.")
     }
     const load = async () => {
+      let supabase
+      try {
+        supabase = getSupabase()
+      } catch {
+        return
+      }
       const { data, error } = await supabase
         .from("leaderboard")
         .select("name, perusahaan, score, created_at")
@@ -50,6 +56,14 @@ export default function Page() {
     const player = name.trim() || "Player"
     const company = perusahaan.trim() || null
     setSaving(true)
+    let supabase
+    try {
+      supabase = getSupabase()
+    } catch {
+      setSaveError("Supabase env tidak tersedia di client. Pastikan .env sudah diisi dan server di-restart.")
+      setSaving(false)
+      return
+    }
     const { error } = await supabase.from("leaderboard").insert({ name: player, perusahaan: company, score: scoreToSave })
     setSaving(false)
     if (error) {
