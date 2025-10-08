@@ -4,9 +4,11 @@ type Props = {
   score: number
   timeLeft: number
   holding?: string | null
+  onToggleFullscreen?: () => void
+  isFullscreen?: boolean
 }
 
-export function HUD({ score, timeLeft, holding }: Props) {
+export function HUD({ score, timeLeft, holding, onToggleFullscreen, isFullscreen }: Props) {
   return (
     <div className="pointer-events-auto flex w-full items-center justify-between gap-2 rounded-md bg-background/70 px-3 py-2 backdrop-blur">
       <div className="flex items-center gap-4">
@@ -20,6 +22,15 @@ export function HUD({ score, timeLeft, holding }: Props) {
           <span className="opacity-70">Holding:</span> <strong>{holding || "-"}</strong>
         </div>
       </div>
+      {onToggleFullscreen && (
+        <button
+          type="button"
+          className="ml-auto inline-flex items-center rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90 focus:outline-none"
+          onClick={onToggleFullscreen}
+        >
+          {isFullscreen ? "Keluar Fullscreen" : "Fullscreen"}
+        </button>
+      )}
     </div>
   )
 }

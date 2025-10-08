@@ -78,6 +78,15 @@ export default function GameBoard({ onGameOver }: { onGameOver?: (score: number)
   const pipeImgRef = useRef<HTMLImageElement | null>(null)
 
   const isMobile = useMediaQuery()
+  const [isFullscreen, setIsFullscreen] = useState(false)
+  const [showRotateHint, setShowRotateHint] = useState(false)
+
+  // Show rotate hint on mobile when in fullscreen but portrait
+  const checkRotateHint = useCallback(() => {
+    if (!isMobile) return setShowRotateHint(false)
+    const isPortrait = window.matchMedia("(orientation: portrait)").matches
+    setShowRotateHint(isPortrait)
+  }, [isMobile])
 
   // HUD state (decoupled from internal refs to avoid excessive re-render)
   const [hud, setHud] = useState<GameState & { holding?: string | null }>(
@@ -119,6 +128,9 @@ export default function GameBoard({ onGameOver }: { onGameOver?: (score: number)
   const lifterTargetRef = useRef<{ x: number; y: number }>({ x: 120, y: 80 })
   const lifterVelRef = useRef<{ vx: number; vy: number }>({ vx: 0, vy: 0 })
   const anchorXRef = useRef<number>(140) // top source x; eases towards gripper center
+  // Layout profile refs
+  const beltFracRef = useRef<number>(0.05) // belt height fraction of canvas height
+  const itemScaleRef = useRef<number>(1)   // scale multiplier for item sizes
 
   // Spawn a random item with guaranteed spacing to prevent stacking at start
   const spawnItem = useCallback(() => {
@@ -194,6 +206,85 @@ export default function GameBoard({ onGameOver }: { onGameOver?: (score: number)
 
   
 
+  
+
+  // Fullscreen helpers
+  const requestFullscreenAndLock = useCallback(async () => {
+    try {
+      const el = wrapperRef.current
+      if (!el) return
+      if (!document.fullscreenElement) {
+        await el.requestFullscreen()
+      }
+      setIsFullscreen(true)
+      // Try to lock orientation on supported browsers (mostly Android Chrome)
+      if (screen.orientation && screen.orientation.lock) {
+        try {
+          await screen.orientation.lock("landscape")
+          setShowRotateHint(false)
+        } catch {
+          // If we couldn't lock, still show hint if portrait on mobile
+          checkRotateHint()
+        }
+      } else {
+        checkRotateHint()
+      }
+    } catch {
+      // If fullscreen fails, show hint on mobile
+      checkRotateHint()
+    }
+  }, [checkRotateHint])
+
+  const exitFullscreenAndUnlock = useCallback(async () => {
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen()
+      }
+    } finally {
+      setIsFullscreen(false)
+      // Unlock orientation if previously locked
+      try {
+        if (screen.orientation && screen.orientation.unlock) {
+          screen.orientation.unlock()
+        }
+      } catch {}
+      setShowRotateHint(false)
+    }
+  }, [])
+
+  const toggleFullscreen = useCallback(() => {
+    if (isFullscreen) {
+      exitFullscreenAndUnlock()
+    } else {
+      requestFullscreenAndLock()
+    }
+  }, [isFullscreen, exitFullscreenAndUnlock, requestFullscreenAndLock])
+
+  // Listen for fullscreenchange to keep state in sync
+  useEffect(() => {
+    const handler = () => {
+      const fs = !!document.fullscreenElement
+      setIsFullscreen(fs)
+      if (!fs) {
+        // when leaving by user gestures, also unlock orientation
+        try {
+          if (screen.orientation && screen.orientation.unlock) {
+            screen.orientation.unlock()
+          }
+        } catch {}
+        setShowRotateHint(false)
+      } else {
+        // entering fullscreen
+        checkRotateHint()
+      }
+    }
+    document.addEventListener("fullscreenchange", handler)
+    return () => document.removeEventListener("fullscreenchange", handler)
+  }, [checkRotateHint])
+
+  // (removed duplicate checkRotateHint)
+
+  // Start game setup
   const startGame = useCallback(() => {
     // fresh start
     itemsRef.current = []
@@ -210,7 +301,24 @@ export default function GameBoard({ onGameOver }: { onGameOver?: (score: number)
     if (Math.random() < 0.6) spawnItem()
     lastSpawnRef.current = performance.now()
     nextSpawnDelayRef.current = rand(SPAWN_INTERVAL_MIN, SPAWN_INTERVAL_MAX)
-  }, [spawnItem])
+
+    // On mobile, attempt to go fullscreen and lock orientation to landscape
+    if (isMobile) {
+      requestFullscreenAndLock()
+    }
+  }, [spawnItem, isMobile, requestFullscreenAndLock])
+
+  useEffect(() => {
+    checkRotateHint()
+    const mq = window.matchMedia("(orientation: portrait)")
+    const cb = () => checkRotateHint()
+    mq.addEventListener?.("change", cb)
+    window.addEventListener("orientationchange", cb)
+    return () => {
+      mq.removeEventListener?.("change", cb)
+      window.removeEventListener("orientationchange", cb)
+    }
+  }, [checkRotateHint])
 
   // Load images once
   useEffect(() => {
@@ -230,64 +338,22 @@ export default function GameBoard({ onGameOver }: { onGameOver?: (score: number)
     pipeImgRef.current = tube
   }, [])
 
-  // Resize canvas responsively
-  useEffect(() => {
-    const el = wrapperRef.current
-    const canvas = canvasRef.current
-    if (!el || !canvas) return
-
-    const onResize = () => {
-      if (resizeRafRef.current) cancelAnimationFrame(resizeRafRef.current)
-      resizeRafRef.current = requestAnimationFrame(() => {
-        const bounds = el.getBoundingClientRect()
-        let w = Math.floor(bounds.width)
-        let h = Math.floor((w * 9) / 16)
-        const viewportH = window.innerHeight
-        // On mobile, keep a slightly smaller height cap so overall scale fits better
-        const maxH = Math.floor(viewportH * (isMobile ? 0.7 : 0.62))
-        if (h > maxH) {
-          h = maxH
-          w = Math.floor((h * 16) / 9)
-        }
-        const dpr = Math.min(2, window.devicePixelRatio || 1)
-
-        // Guard: hanya update bila berbeda
-        const prev = scaledRef.current
-        if (prev.w === w && prev.h === h && prev.dpr === dpr) return
-
-        canvas.style.width = `${w}px`
-        canvas.style.height = `${h}px`
-        canvas.width = Math.floor(w * dpr)
-        canvas.height = Math.floor(h * dpr)
-        scaledRef.current = { w, h, dpr }
-
-        // Setup ulang layout berdasarkan ukuran baru
-        setupLevel()
-      })
-    }
-
-    const ro = new ResizeObserver(onResize)
-    ro.observe(el)
-
-    // trigger pertama via rAF agar sinkron dengan layout pass browser
-    onResize()
-
-    return () => {
-      ro.disconnect()
-      if (resizeRafRef.current) cancelAnimationFrame(resizeRafRef.current)
-    }
-  }, [isMobile])
-
-  // Setup targets based on size
-  function setupLevel() {
+  // Setup targets based on size (with layout profiles)
+  const setupLevel = useCallback(() => {
     const { w, h } = scaledRef.current
+    // Layout profile per mode
+    const targetScale = isFullscreen ? 1.15 : 1.0
+    const lifterScale = isFullscreen ? 1.1 : 1.0
+    beltFracRef.current = isFullscreen ? 0.06 : 0.05
+    itemScaleRef.current = isFullscreen ? 1.1 : 1.0
+
     conveyorRef.current.y = Math.floor(h * 0.72)
 
     // On small screens, allow smaller minima so assets don't look oversized
     const smallScreen = w < 500
-    const targetW = Math.max(smallScreen ? 72 : 100, Math.floor(w * 0.12))
-    const targetH = Math.max(smallScreen ? 40 : 50, Math.floor(h * 0.09))
-    const baseY = Math.floor(h * 0.32)
+    const targetW = Math.max(smallScreen ? 72 : 100, Math.floor(w * 0.12 * targetScale))
+    const targetH = Math.max(smallScreen ? 40 : 50, Math.floor(h * 0.09 * targetScale))
+    const baseY = Math.floor(h * (smallScreen ? 0.28 : (isFullscreen ? 0.34 : 0.32)))
 
     targetsRef.current = [
       {
@@ -304,7 +370,7 @@ export default function GameBoard({ onGameOver }: { onGameOver?: (score: number)
     ]
 
     // Reset lifter bounds a bit below the top
-  const gripW = Math.max(smallScreen ? 56 : 72, Math.floor(w * 0.09))
+    const gripW = Math.max(smallScreen ? 56 : 72, Math.floor(w * 0.09 * lifterScale))
     const gripH = Math.floor(gripW * 0.43)
     lifterRef.current.w = gripW
     lifterRef.current.h = gripH
@@ -312,12 +378,114 @@ export default function GameBoard({ onGameOver }: { onGameOver?: (score: number)
     lifterRef.current.x = Math.floor(w * 0.14)
     lifterTargetRef.current = { x: lifterRef.current.x, y: lifterRef.current.y }
     anchorXRef.current = lifterRef.current.x + lifterRef.current.w / 2
-  }
+  }, [isFullscreen])
 
-  // Keyboard controls
+  // Resize canvas responsively
+  useEffect(() => {
+    const el = wrapperRef.current
+    const canvas = canvasRef.current
+    if (!el || !canvas) return
+
+    const getAdaptiveDpr = (w: number, h: number) => {
+      const devDpr = Math.max(1, window.devicePixelRatio || 1)
+      // Base caps: stricter on mobile, stricter when fullscreen
+      const cap = isMobile
+        ? (isFullscreen ? 1.0 : 1.25)
+        : (isFullscreen ? 1.5 : 2.0)
+      let dpr = Math.min(devDpr, cap)
+
+      // Pixel budget to avoid fill-rate bottlenecks
+      const budget = isMobile
+        ? (isFullscreen ? 1.6e6 : 1.3e6)
+        : (isFullscreen ? 3.2e6 : 2.2e6)
+      const px = w * h * dpr * dpr
+      if (px > budget) {
+        dpr = Math.sqrt(budget / (w * h))
+      }
+      // Reasonable floor to keep text readable
+      return Math.max(0.75, Math.min(dpr, cap))
+    }
+
+    const onResize = () => {
+      if (resizeRafRef.current) cancelAnimationFrame(resizeRafRef.current)
+      resizeRafRef.current = requestAnimationFrame(() => {
+        const bounds = el.getBoundingClientRect()
+  let w = Math.floor(bounds.width)
+  // Keep a consistent 16:9 aspect outside of fullscreen as before
+  let h = Math.floor((w * 9) / 16)
+        // When in fullscreen, use as much height as available inside wrapper while preserving 16:9
+        if (isFullscreen) {
+          const maxH = Math.floor(bounds.height)
+          if (h > maxH) {
+            h = maxH
+            w = Math.floor((h * 16) / 9)
+          }
+        } else {
+          const viewportH = window.innerHeight
+          const maxH = Math.floor(viewportH * (isMobile ? 0.7 : 0.62))
+          if (h > maxH) {
+            h = maxH
+            w = Math.floor((h * 16) / 9)
+          }
+          // Ensure a reasonable minimum height on mobile so canvas tidak terlalu kecil
+          const minH = isMobile ? 240 : 0
+          if (h < minH) {
+            h = minH
+            // keep aspect; don't exceed container width
+            w = Math.min(Math.floor((h * 16) / 9), Math.floor(bounds.width))
+          }
+        }
+  const dpr = getAdaptiveDpr(w, h)
+
+        // Guard: hanya update bila berbeda
+        const prev = scaledRef.current
+        if (prev.w === w && prev.h === h && prev.dpr === dpr) return
+
+        // Apply new canvas size
+        canvas.style.width = `${w}px`
+        canvas.style.height = `${h}px`
+        canvas.width = Math.floor(w * dpr)
+        canvas.height = Math.floor(h * dpr)
+        scaledRef.current = { w, h, dpr }
+
+        // Setup ulang layout berdasarkan ukuran baru (targets, lifter geometry)
+        setupLevel()
+
+        // Rescale existing items so their position/size stay proportional
+        if (prev.w > 0 && prev.h > 0 && itemsRef.current.length) {
+          const scaleX = w / prev.w
+          const scaleY = h / prev.h
+          for (const it of itemsRef.current) {
+            // position
+            it.x *= scaleX
+            it.y *= scaleY
+            // size based on new canvas width for consistency
+            const s = getSizeFor(it.type)
+            it.w = s.w
+            it.h = s.h
+            // any pending landing target Y should scale as well
+            if (typeof it.landingY === "number") {
+              it.landingY = it.landingY * scaleY
+            }
+          }
+        }
+      })
+    }
+
+  const ro = new ResizeObserver(onResize)
+    ro.observe(el)
+
+    // trigger pertama via rAF agar sinkron dengan layout pass browser
+    onResize()
+
+    return () => {
+      ro.disconnect()
+      if (resizeRafRef.current) cancelAnimationFrame(resizeRafRef.current)
+    }
+  }, [isMobile, isFullscreen, setupLevel])
+
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      // Ignore keyboard when typing into inputs/textareas/contentEditable
       const t = e.target as HTMLElement | null
       const isEditable = !!t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable === true)
       if (isEditable) {
@@ -509,13 +677,20 @@ export default function GameBoard({ onGameOver }: { onGameOver?: (score: number)
 
     // Lifter pick/drop logic: if vacuum on and not holding, grab nearest item within reach
     if (lifter.vacuum && !lifter.holding) {
+      // Use actual gripper bottom point for reach calculation
+      const { bottomX, bottomY } = getHeadGeo()
+      // helper: distance from point to rect
+      const distToRect = (px: number, py: number, rx: number, ry: number, rw: number, rh: number) => {
+        const nx = clamp(px, rx, rx + rw)
+        const ny = clamp(py, ry, ry + rh)
+        return Math.hypot(px - nx, py - ny)
+      }
       let nearest: Item | null = null
-      let bestDist = 36
+      // Threshold follows lifter size and gives a little extra in fullscreen
+      let bestDist = Math.max(24, Math.min(lifter.w, lifter.h) * (isFullscreen ? 0.75 : 0.6))
       for (const it of items) {
         if (it.grabbed) continue
-        const cx = it.x + it.w / 2
-        const cy = it.y + it.h / 2
-        const d = Math.hypot(lifter.x + lifter.w / 2 - cx, lifter.y - cy)
+        const d = distToRect(bottomX, bottomY, it.x, it.y, it.w, it.h)
         if (d < bestDist) {
           bestDist = d
           nearest = it
@@ -585,7 +760,7 @@ export default function GameBoard({ onGameOver }: { onGameOver?: (score: number)
     const { w } = scaledRef.current
     const smallScreen = w < 500
     // Slightly smaller base on small screens
-    const base = Math.max(smallScreen ? 20 : 26, Math.floor(w * (smallScreen ? 0.028 : 0.03)))
+    const base = Math.max(smallScreen ? 20 : 26, Math.floor(w * (smallScreen ? 0.028 : 0.03))) * itemScaleRef.current
     switch (type) {
       case "bottle":
         return { w: base * 0.9, h: base * 1.8 }
@@ -617,8 +792,8 @@ export default function GameBoard({ onGameOver }: { onGameOver?: (score: number)
     }
 
     // Conveyor belt
-    const beltY = conveyorRef.current.y
-    const beltH = Math.floor(height * 0.05)
+  const beltY = conveyorRef.current.y
+  const beltH = Math.floor(height * beltFracRef.current)
     ctx.fillStyle = "#6b7280" // neutral gray for belt surface
     ctx.fillRect(0, beltY, width, beltH)
     // belt arrows
@@ -946,7 +1121,7 @@ export default function GameBoard({ onGameOver }: { onGameOver?: (score: number)
     if (!targets.length) return
     const minY = Math.min(...targets.map((t) => t.y))
     const maxH = Math.max(...targets.map((t) => t.h))
-    const shelfY = minY + maxH + 6
+  const shelfY = minY + maxH + (scaledRef.current.w < 500 ? 10 : 6)
     const boardH = 12
 
     // papan meja
@@ -964,8 +1139,8 @@ export default function GameBoard({ onGameOver }: { onGameOver?: (score: number)
   }
 
   return (
-    <div ref={wrapperRef} className="relative">
-  <div className="mx-auto max-w-6xl rounded-lg border bg-background p-2 shadow-sm overflow-hidden">
+    <div ref={wrapperRef} className={"relative " + (isFullscreen ? "fixed inset-0 z-50 bg-background" : "")}>
+  <div className={"mx-auto max-w-6xl rounded-lg border bg-background p-2 shadow-sm overflow-hidden " + (isFullscreen ? "h-full w-full max-w-none border-0 p-0" : "") }>
         <div className="relative rounded-md overflow-hidden isolate">
           <canvas ref={canvasRef} className="block w-full rounded-md bg-background" />
           {/* Start overlay */}
@@ -984,14 +1159,34 @@ export default function GameBoard({ onGameOver }: { onGameOver?: (score: number)
               score={hud.score}
               timeLeft={hud.timeLeft}
               holding={hud.holding}
+              onToggleFullscreen={toggleFullscreen}
+              isFullscreen={isFullscreen}
             />
           </div>
+
+          {/* Rotate hint overlay for mobile in fullscreen portrait */}
+          {showRotateHint && isFullscreen && (
+            <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/60 text-white p-6">
+              <div className="rounded-lg bg-background/90 p-4 text-center text-sm text-foreground">
+                <div className="mb-2 font-semibold">Putar perangkat ke lanskap</div>
+                <div className="opacity-80">Untuk pengalaman terbaik, gunakan orientasi lanskap saat fullscreen.</div>
+              </div>
+            </div>
+          )}
         </div>
+        {isMobile && isFullscreen && (
+          <div className="pointer-events-none absolute inset-0 z-20 flex items-end justify-between p-3">
+            {/* we re-render controls as overlay with pointer events enabled only on inner */}
+            <div className="pointer-events-auto w-full">
+              <MobileControls overlay vacuumActive={vacuumState} onDirChange={handleDirChange} onVacuum={handleVacuum} />
+            </div>
+          </div>
+        )}
         
         {/* Show mobile controls below canvas on mobile */}
-        {isMobile && (
+        {isMobile && !isFullscreen && (
           <div className="mt-2">
-            <MobileControls onDirChange={handleDirChange} onVacuum={handleVacuum} />
+            <MobileControls vacuumActive={vacuumState} onDirChange={handleDirChange} onVacuum={handleVacuum} />
           </div>
         )}
         
