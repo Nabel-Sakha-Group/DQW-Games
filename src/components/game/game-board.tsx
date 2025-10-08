@@ -76,6 +76,11 @@ export default function GameBoard({ onGameOver }: { onGameOver?: (score: number)
   const bgImgRef = useRef<HTMLImageElement | null>(null)
   const lifterImgRef = useRef<HTMLImageElement | null>(null) // will load gripper.svg
   const pipeImgRef = useRef<HTMLImageElement | null>(null)
+  // Narrow type for orientation API without using 'any'
+  type ScreenOrientationLike = {
+    lock?: (orientation: OrientationLockType | string) => Promise<void> | void
+    unlock?: () => void
+  }
 
   const isMobile = useMediaQuery()
   const [isFullscreen, setIsFullscreen] = useState(false)
@@ -218,9 +223,10 @@ export default function GameBoard({ onGameOver }: { onGameOver?: (score: number)
       }
       setIsFullscreen(true)
       // Try to lock orientation on supported browsers (mostly Android Chrome)
-      if (screen.orientation && screen.orientation.lock) {
+      const orientationLike = (screen as unknown as { orientation?: ScreenOrientationLike }).orientation
+      if (orientationLike && typeof orientationLike.lock === "function") {
         try {
-          await screen.orientation.lock("landscape")
+          await orientationLike.lock("landscape")
           setShowRotateHint(false)
         } catch {
           // If we couldn't lock, still show hint if portrait on mobile
@@ -244,8 +250,9 @@ export default function GameBoard({ onGameOver }: { onGameOver?: (score: number)
       setIsFullscreen(false)
       // Unlock orientation if previously locked
       try {
-        if (screen.orientation && screen.orientation.unlock) {
-          screen.orientation.unlock()
+        const orientationLike = (screen as unknown as { orientation?: ScreenOrientationLike }).orientation
+        if (orientationLike && typeof orientationLike.unlock === "function") {
+          orientationLike.unlock()
         }
       } catch {}
       setShowRotateHint(false)
@@ -268,8 +275,9 @@ export default function GameBoard({ onGameOver }: { onGameOver?: (score: number)
       if (!fs) {
         // when leaving by user gestures, also unlock orientation
         try {
-          if (screen.orientation && screen.orientation.unlock) {
-            screen.orientation.unlock()
+          const orientationLike = (screen as unknown as { orientation?: ScreenOrientationLike }).orientation
+          if (orientationLike && typeof orientationLike.unlock === "function") {
+            orientationLike.unlock()
           }
         } catch {}
         setShowRotateHint(false)
