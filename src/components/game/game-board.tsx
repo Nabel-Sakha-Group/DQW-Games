@@ -78,7 +78,8 @@ export default function GameBoard({ onGameOver }: { onGameOver?: (score: number)
   const pipeImgRef = useRef<HTMLImageElement | null>(null)
   // Narrow type for orientation API without using 'any'
   type ScreenOrientationLike = {
-    lock?: (orientation: OrientationLockType | string) => Promise<void> | void
+    // Use string to avoid depending on lib.dom's OrientationLockType availability across TS versions
+    lock?: (orientation: string) => Promise<void> | void
     unlock?: () => void
   }
 
