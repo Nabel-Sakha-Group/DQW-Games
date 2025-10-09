@@ -60,30 +60,6 @@ function ClickableKey({
   )
 }
 
-function KeyDisplay({ 
-  children, 
-  pressed, 
-  className 
-}: { 
-  children: React.ReactNode
-  pressed: boolean
-  className?: string 
-}) {
-  return (
-    <div
-      className={cn(
-        "flex h-8 w-8 items-center justify-center rounded border-2 text-xs font-semibold transition-all duration-75",
-        pressed
-          ? "border-blue-500 bg-blue-500/20 text-blue-700 shadow-md"
-          : "border-gray-300 bg-white/80 text-gray-600 shadow-sm",
-        className
-      )}
-    >
-      {children}
-    </div>
-  )
-}
-
 export default function DesktopControls({ keys, vacuum, onDirChange, onVacuum }: Props) {
   return (
     <div className="pointer-events-auto hidden items-center gap-6 rounded-lg bg-background/80 px-4 py-3 backdrop-blur sm:flex">
@@ -142,15 +118,6 @@ export default function DesktopControls({ keys, vacuum, onDirChange, onVacuum }:
           {vacuum ? "ON" : "OFF"}
         </Button>
         <div className="text-xs text-muted-foreground">Vacuum</div>
-      </div>
-
-      {/* Keyboard Reference */}
-      <div className="flex items-center gap-3">
-        <span className="text-sm font-medium text-muted-foreground">Keyboard:</span>
-        <KeyDisplay pressed={false} className="w-8">
-          P
-        </KeyDisplay>
-        <div className="text-xs text-muted-foreground">Pause</div>
       </div>
     </div>
   )

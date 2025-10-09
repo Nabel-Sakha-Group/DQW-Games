@@ -86,16 +86,8 @@ export default function Page() {
 
   return (
     <main className="min-h-dvh bg-background text-foreground">
-  <header className="mx-auto max-w-6xl px-3 sm:px-4 py-3 sm:py-4 flex items-center justify-between gap-2">
+        <header className="text-center py-4 sm:py-6">
         <h1 className="text-balance text-2xl md:text-3xl font-semibold">Pick & Place Factory</h1>
-        <a
-          href="/images/layout-reference.png"
-          target="_blank"
-          rel="noreferrer"
-          className="text-sm underline opacity-80 hover:opacity-100"
-        >
-          Lihat Referensi Layout
-        </a>
       </header>
       <section className="mx-auto max-w-6xl px-3 sm:px-4 pb-6 sm:pb-8">
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_260px] gap-3 sm:gap-4 items-start">

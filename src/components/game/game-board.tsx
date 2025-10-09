@@ -837,6 +837,9 @@ export default function GameBoard({ onGameOver }: { onGameOver?: (score: number)
     ctx.scale(dpr, dpr)
     ctx.clearRect(0, 0, width, height)
 
+    // Define ground level for the whole scene
+    const groundY = Math.floor(height * 0.65) // Start ground earlier at 65% height
+
     // Background
     if (bgImgRef.current && bgImgRef.current.complete) {
       ctx.drawImage(bgImgRef.current, 0, 0, width, height)
@@ -845,11 +848,55 @@ export default function GameBoard({ onGameOver }: { onGameOver?: (score: number)
       ctx.fillRect(0, 0, width, height)
     }
 
-    // Conveyor belt
-  const beltY = conveyorRef.current.y
-  const beltH = Math.floor(height * beltFracRef.current)
+    // Ground/Floor - Extended ground to make everything look grounded
+    ctx.fillStyle = "#d4d4d8" // Light gray ground
+    ctx.fillRect(0, groundY, width, height - groundY)
+    
+    // Add subtle ground texture
+    ctx.fillStyle = "#a1a1aa" // Darker gray for texture lines
+    const lineSpacing = 40
+    for (let x = 0; x < width; x += lineSpacing) {
+      ctx.fillRect(x, groundY, 1, height - groundY)
+    }
+    for (let y = groundY; y < height; y += lineSpacing) {
+      ctx.fillRect(0, y, width, 1)
+    }
+
+    // Targets shelf (draw before conveyor so it sits on ground)
+    drawTargetsShelf(ctx, width, height)
+
+    // Conveyor belt legs/supports (draw before belt surface)
+    const beltY = conveyorRef.current.y
+    const beltH = Math.floor(height * beltFracRef.current)
+    const legHeight = groundY - (beltY + beltH)
+    
+    // Draw conveyor support legs
+    if (legHeight > 10) { // Only if there's meaningful space
+      const legWidth = 12
+      const numLegs = Math.max(4, Math.floor(width / 140)) // One leg every ~140px
+      
+      for (let i = 0; i <= numLegs; i++) {
+        const legX = Math.floor((width / numLegs) * i - legWidth / 2)
+        if (legX >= 10 && legX + legWidth <= width - 10) {
+          // Main leg - dark gray industrial color
+          ctx.fillStyle = "#374151"
+          ctx.fillRect(legX, beltY + beltH, legWidth, legHeight)
+          
+          // Add foot plate at bottom for stability
+          ctx.fillStyle = "#1f2937"
+          ctx.fillRect(legX - 6, groundY - 4, legWidth + 12, 4)
+          
+          // Add small mounting bracket at top
+          ctx.fillStyle = "#4b5563"
+          ctx.fillRect(legX - 2, beltY + beltH, legWidth + 4, 6)
+        }
+      }
+    }
+
+    // Conveyor belt surface
     ctx.fillStyle = "#6b7280" // neutral gray for belt surface
     ctx.fillRect(0, beltY, width, beltH)
+    
     // belt arrows
     ctx.fillStyle = "#d1d5db"
     const segW = 22
@@ -861,9 +908,6 @@ export default function GameBoard({ onGameOver }: { onGameOver?: (score: number)
       ctx.closePath()
       ctx.fill()
     }
-
-    // Targets shelf
-    drawTargetsShelf(ctx, width)
 
     // Targets
     for (const t of targetsRef.current) {
@@ -1170,31 +1214,37 @@ export default function GameBoard({ onGameOver }: { onGameOver?: (score: number)
   }
 
   // Draw targets shelf
-  function drawTargetsShelf(ctx: CanvasRenderingContext2D, width: number) {
+  function drawTargetsShelf(ctx: CanvasRenderingContext2D, width: number, height: number) {
     const targets = targetsRef.current
     if (!targets.length) return
+    
+    const groundY = Math.floor(height * 0.65) // Same ground level as main scene
     const minY = Math.min(...targets.map((t) => t.y))
     const maxH = Math.max(...targets.map((t) => t.h))
-  const shelfY = minY + maxH + (scaledRef.current.w < 500 ? 10 : 6)
+    const shelfY = minY + maxH + (scaledRef.current.w < 500 ? 10 : 6)
     const boardH = 12
 
     // papan meja
     ctx.fillStyle = "#b97728"
     ctx.fillRect(Math.floor(width * 0.12), shelfY, Math.floor(width * 0.76), boardH)
 
-    // kaki-kaki tepat di bawah tiap target
+    // kaki-kaki tepat di bawah tiap target - extended to ground
     ctx.fillStyle = "#8b5e34"
     for (const t of targets) {
       const legW = Math.max(6, Math.floor(t.w * 0.08))
       const legX = t.x + t.w / 2 - legW / 2
-      const legH = 18
-      ctx.fillRect(legX, shelfY + boardH, legW, legH)
+      const legH = groundY - (shelfY + boardH) // Calculate height to reach ground
+      if (legH > 0) {
+        ctx.fillRect(legX, shelfY + boardH, legW, legH)
+        // Add foot at bottom for stability
+        ctx.fillRect(legX - 2, groundY - 3, legW + 4, 3)
+      }
     }
   }
 
   return (
     <div ref={wrapperRef} className={"relative " + (isFullscreen ? "fixed inset-0 z-50 bg-background" : "")}>
-  <div className={"mx-auto max-w-6xl rounded-lg border bg-background p-2 shadow-sm overflow-hidden " + (isFullscreen ? "h-full w-full max-w-none border-0 p-0" : "") }>
+  <div className={"mx-auto max-w-6xl rounded-lg border bg-background shadow-sm overflow-hidden " + (isFullscreen ? "h-full w-full max-w-none border-0 p-0" : "p-1") }>
         <div className="relative rounded-md overflow-hidden isolate">
           <canvas ref={canvasRef} className="block w-full rounded-md bg-background" />
           {/* Start overlay */}
@@ -1253,7 +1303,7 @@ export default function GameBoard({ onGameOver }: { onGameOver?: (score: number)
             </div>
           )}
           
-          <div className="pointer-events-none absolute left-2 right-2 top-2 z-10">
+          <div className={`pointer-events-none absolute ${isFullscreen ? 'left-2 right-2 top-2' : 'left-2 right-2 top-1'} z-10`}>
             <HUD
               score={hud.score}
               timeLeft={hud.timeLeft}
