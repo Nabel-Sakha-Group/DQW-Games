@@ -86,6 +86,10 @@ export default function GameBoard({ onGameOver }: { onGameOver?: (score: number)
   const isMobile = useMediaQuery()
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [showRotateHint, setShowRotateHint] = useState(false)
+  const [displayMode, setDisplayMode] = useState<'desktop' | 'mobile'>('desktop')
+  const [countdown, setCountdown] = useState<number | null>(null)
+  const [gameOver, setGameOver] = useState(false)
+  const [finalScore, setFinalScore] = useState(0)
 
   // Show rotate hint on mobile when in fullscreen but portrait
   const checkRotateHint = useCallback(() => {
@@ -293,29 +297,50 @@ export default function GameBoard({ onGameOver }: { onGameOver?: (score: number)
 
   // (removed duplicate checkRotateHint)
 
-  // Start game setup
-  const startGame = useCallback(() => {
-    // fresh start
-    itemsRef.current = []
-    lifterRef.current.holding = null
-    lifterRef.current.vacuum = false
-    keysRef.current = {}
-    gameRef.current = { score: 0, timeLeft: GAME_SECONDS, paused: false }
-    setVacuumState(false)
-    setHud({ score: 0, timeLeft: GAME_SECONDS, paused: false, holding: null })
-    setStarted(true)
-    gameOverFiredRef.current = false
-    // spawn a couple items immediately so conveyor isn't empty
-    spawnItem()
-    if (Math.random() < 0.6) spawnItem()
-    lastSpawnRef.current = performance.now()
-    nextSpawnDelayRef.current = rand(SPAWN_INTERVAL_MIN, SPAWN_INTERVAL_MAX)
-
-    // On mobile, attempt to go fullscreen and lock orientation to landscape
-    if (isMobile) {
-      requestFullscreenAndLock()
-    }
-  }, [spawnItem, isMobile, requestFullscreenAndLock])
+  // Start game with countdown
+  const startGameWithCountdown = useCallback(() => {
+    setCountdown(3)
+    
+    // Auto fullscreen saat game start
+    requestFullscreenAndLock()
+    
+    const countdownInterval = setInterval(() => {
+      setCountdown(prev => {
+        if (prev === null || prev <= 1) {
+          clearInterval(countdownInterval)
+          // Actually start the game
+          itemsRef.current = []
+          lifterRef.current.holding = null
+          lifterRef.current.vacuum = false
+          keysRef.current = {}
+          gameRef.current = { score: 0, timeLeft: GAME_SECONDS, paused: false }
+          setVacuumState(false)
+          setHud({ score: 0, timeLeft: GAME_SECONDS, paused: false, holding: null })
+          setStarted(true)
+          setGameOver(false)
+          gameOverFiredRef.current = false
+          // spawn a couple items immediately so conveyor isn't empty
+          spawnItem()
+          if (Math.random() < 0.6) spawnItem()
+          lastSpawnRef.current = performance.now()
+          nextSpawnDelayRef.current = rand(SPAWN_INTERVAL_MIN, SPAWN_INTERVAL_MAX)
+          
+          return null
+        }
+        return prev - 1
+      })
+    }, 1000)
+  }, [spawnItem, requestFullscreenAndLock])
+  
+  // Restart game function
+  const restartGame = useCallback(() => {
+    setGameOver(false)
+    setStarted(false)
+    setCountdown(null)
+    // Reset game state
+    gameRef.current = { score: 0, timeLeft: GAME_SECONDS, paused: true }
+    setHud({ score: 0, timeLeft: GAME_SECONDS, paused: true, holding: null })
+  }, [])
 
   useEffect(() => {
     checkRotateHint()
@@ -464,17 +489,35 @@ export default function GameBoard({ onGameOver }: { onGameOver?: (score: number)
         if (prev.w > 0 && prev.h > 0 && itemsRef.current.length) {
           const scaleX = w / prev.w
           const scaleY = h / prev.h
+          const newConveyorY = conveyorRef.current.y
+          const prevConveyorY = prev.h * 0.72
+          
           for (const it of itemsRef.current) {
-            // position
-            it.x *= scaleX
-            it.y *= scaleY
-            // size based on new canvas width for consistency
-            const s = getSizeFor(it.type)
-            it.w = s.w
-            it.h = s.h
-            // any pending landing target Y should scale as well
+            // Detect if item was on conveyor belt before resize (bottom of item near conveyor level)
+            const itemBottomY = it.y + it.h
+            const wasOnConveyor = Math.abs(itemBottomY - prevConveyorY) <= 20 && !it.vy && !it.grabbed
+            
+            if (wasOnConveyor) {
+              // Item on conveyor: scale X position but snap Y to new conveyor position
+              it.x *= scaleX
+              // Update size first, then position bottom on conveyor
+              const s = getSizeFor(it.type)
+              it.w = s.w
+              it.h = s.h
+              it.y = newConveyorY - s.h
+            } else {
+              // Item not on conveyor (grabbed, dropping, or in air): normal scaling
+              it.x *= scaleX
+              it.y *= scaleY
+              // Update size
+              const s = getSizeFor(it.type)
+              it.w = s.w
+              it.h = s.h
+            }
+            
+            // Update any pending landing target Y
             if (typeof it.landingY === "number") {
-              it.landingY = it.landingY * scaleY
+              it.landingY = newConveyorY - it.h
             }
           }
         }
@@ -578,6 +621,8 @@ export default function GameBoard({ onGameOver }: { onGameOver?: (score: number)
       // fire game over once
       if (!gameOverFiredRef.current && g.timeLeft <= 0) {
         gameOverFiredRef.current = true
+        setGameOver(true)
+        setFinalScore(g.score)
         onGameOver?.(g.score)
       }
 
@@ -1153,16 +1198,61 @@ export default function GameBoard({ onGameOver }: { onGameOver?: (score: number)
         <div className="relative rounded-md overflow-hidden isolate">
           <canvas ref={canvasRef} className="block w-full rounded-md bg-background" />
           {/* Start overlay */}
-          {!started && (
+          {!started && countdown === null && !gameOver && (
             <div className="absolute inset-0 z-20 flex items-center justify-center bg-background/70 backdrop-blur-sm pointer-events-auto p-4">
               <button
                 className="rounded-md bg-blue-600 text-white px-6 py-3 text-base font-semibold shadow hover:bg-blue-700 focus:outline-none"
-                onClick={startGame}
+                onClick={startGameWithCountdown}
               >
                 Start Game
               </button>
             </div>
           )}
+          
+          {/* Game Over overlay */}
+          {gameOver && (
+            <div className="absolute inset-0 z-30 flex items-center justify-center bg-background/90 backdrop-blur-sm pointer-events-auto p-4">
+              <div className="text-center max-w-md">
+                <div className="text-6xl font-bold text-red-500 mb-4">GAME OVER</div>
+                <div className="text-2xl font-semibold mb-2">Final Score</div>
+                <div className="text-4xl font-bold text-primary mb-6">{finalScore}</div>
+                <div className="space-y-3">
+                  <button
+                    className="w-full rounded-md bg-green-600 text-white px-6 py-3 text-base font-semibold shadow hover:bg-green-700 focus:outline-none"
+                    onClick={restartGame}
+                  >
+                    🔄 Play Again
+                  </button>
+                  {isFullscreen && (
+                    <button
+                      className="w-full rounded-md bg-gray-600 text-white px-6 py-3 text-base font-semibold shadow hover:bg-gray-700 focus:outline-none"
+                      onClick={exitFullscreenAndUnlock}
+                    >
+                      📤 Exit Fullscreen
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+          
+          {/* Countdown overlay */}
+          {countdown !== null && (
+            <div className="absolute inset-0 z-30 flex items-center justify-center bg-background/80 backdrop-blur-sm">
+              <div className="text-center">
+                <div className="text-8xl font-bold text-primary mb-4 animate-pulse">
+                  {countdown === 0 ? "GO!" : countdown}
+                </div>
+                <div className="text-xl text-muted-foreground mb-4">Get ready...</div>
+                {isFullscreen && (
+                  <div className="text-sm text-muted-foreground/80">
+                    💡 Tip: Gunakan tombol &quot;Display&quot; di pojok kanan atas untuk mengatur kontrol
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+          
           <div className="pointer-events-none absolute left-2 right-2 top-2 z-10">
             <HUD
               score={hud.score}
@@ -1172,6 +1262,46 @@ export default function GameBoard({ onGameOver }: { onGameOver?: (score: number)
               isFullscreen={isFullscreen}
             />
           </div>
+          
+          {/* Display Mode Toggle in Fullscreen - Enhanced visibility */}
+          {isFullscreen && (
+            <div className="pointer-events-none absolute right-2 top-16 z-40">
+              <div className="pointer-events-auto">
+                {/* Extra glow during countdown */}
+                {countdown !== null && (
+                  <div className="absolute inset-0 rounded-lg bg-yellow-400/30 animate-pulse -m-1"></div>
+                )}
+                <button
+                  className={`relative rounded-lg px-4 py-3 text-sm font-semibold shadow-lg transition-all duration-200 border-2 ${
+                    displayMode === 'mobile' 
+                      ? 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-500 shadow-emerald-500/30' 
+                      : 'bg-slate-700 hover:bg-slate-600 text-white border-slate-600 shadow-slate-500/30'
+                  } backdrop-blur-sm ${countdown !== null ? 'animate-bounce' : 'animate-pulse hover:animate-none'} focus:outline-none focus:ring-2 focus:ring-primary/50`}
+                  onClick={() => setDisplayMode(prev => prev === 'desktop' ? 'mobile' : 'desktop')}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg">
+                      {displayMode === 'mobile' ? '🎮' : '🖥️'}
+                    </span>
+                    <div className="text-left">
+                      <div className="font-bold">Display</div>
+                      <div className="text-xs opacity-90">{displayMode === 'desktop' ? 'Desktop' : 'Mobile'}</div>
+                    </div>
+                  </div>
+                  {/* Notification badge - more prominent during countdown */}
+                  <div className={`absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full ${countdown !== null ? 'animate-ping' : 'animate-pulse'}`}></div>
+                  <div className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full"></div>
+                  
+                  {/* Countdown indicator */}
+                  {countdown !== null && (
+                    <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 bg-yellow-500 text-black text-xs px-2 py-1 rounded-md font-bold whitespace-nowrap">
+                      Click me now!
+                    </div>
+                  )}
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Rotate hint overlay for mobile in fullscreen portrait */}
           {showRotateHint && isFullscreen && (
@@ -1183,7 +1313,8 @@ export default function GameBoard({ onGameOver }: { onGameOver?: (score: number)
             </div>
           )}
         </div>
-        {isMobile && isFullscreen && (
+        {/* Mobile controls in fullscreen - show based on displayMode */}
+        {isFullscreen && displayMode === 'mobile' && (
           <div className="pointer-events-none absolute inset-0 z-20 flex items-end justify-between p-3">
             {/* we re-render controls as overlay with pointer events enabled only on inner */}
             <div className="pointer-events-auto w-full">
@@ -1192,7 +1323,7 @@ export default function GameBoard({ onGameOver }: { onGameOver?: (score: number)
           </div>
         )}
         
-        {/* Show mobile controls below canvas on mobile */}
+        {/* Show mobile controls below canvas on mobile (non-fullscreen) */}
         {isMobile && !isFullscreen && (
           <div className="mt-2">
             <MobileControls vacuumActive={vacuumState} onDirChange={handleDirChange} onVacuum={handleVacuum} />

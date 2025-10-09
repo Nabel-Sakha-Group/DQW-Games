@@ -14,6 +14,7 @@ function Joystick({ onVector }: { onVector: (dx: number, dy: number) => void }) 
   const areaRef = useRef<HTMLDivElement | null>(null)
   const [dragging, setDragging] = useState(false)
   const [pos, setPos] = useState<{x:number;y:number}>({x:0,y:0})
+  const [active, setActive] = useState(false)
   const radius = 42 // travel radius
   const dead = 10
   const vecRef = useRef<{x:number;y:number}>({x:0,y:0})
@@ -35,10 +36,12 @@ function Joystick({ onVector }: { onVector: (dx: number, dy: number) => void }) 
     }
     setPos({x:dx, y:dy})
     const mag = Math.max(0, len - dead) / (max - dead)
+    // Standard joystick: emit proportionally once past deadzone
     const nx = (len > 0 ? dx/len : 0) * mag
     const ny = (len > 0 ? dy/len : 0) * mag
     vecRef.current = { x: nx, y: ny }
     onVector(nx, ny)
+    setActive(mag > 0)
   }, [onVector])
 
   // No global listeners; rely on pointer capture to keep events flowing
@@ -70,14 +73,15 @@ function Joystick({ onVector }: { onVector: (dx: number, dy: number) => void }) 
         e.preventDefault()
         setDragging(false)
         setPos({x:0, y:0})
+        setActive(false)
         vecRef.current = {x:0,y:0}
         onVector(0,0)
         if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null }
       }}
-      onPointerCancel={() => { setDragging(false); setPos({x:0, y:0}); vecRef.current = {x:0,y:0}; onVector(0,0); if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null } }}
+      onPointerCancel={() => { setDragging(false); setPos({x:0, y:0}); setActive(false); vecRef.current = {x:0,y:0}; onVector(0,0); if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null } }}
     >
       {/* guide ring */}
-      <div className="pointer-events-none absolute left-1/2 top-1/2 h-24 w-24 -translate-x-1/2 -translate-y-1/2 rounded-full border border-border/60" />
+      <div className={"pointer-events-none absolute left-1/2 top-1/2 h-24 w-24 -translate-x-1/2 -translate-y-1/2 rounded-full border " + (active ? "border-primary/70 shadow-[0_0_12px_rgba(59,130,246,0.35)]" : "border-border/60")} />
       <div className="pointer-events-none absolute left-1/2 top-1/2 h-16 w-16 -translate-x-1/2 -translate-y-1/2 rounded-full border border-border/40" />
       {/* knob */}
       <div
@@ -85,7 +89,7 @@ function Joystick({ onVector }: { onVector: (dx: number, dy: number) => void }) 
         style={{ left: `calc(50% + ${pos.x}px)`, top: `calc(50% + ${pos.y}px)` }}
       />
       {!dragging && (
-        <div className="pointer-events-none absolute inset-0 grid place-items-center text-[10px] opacity-60">Drag</div>
+        <div className="pointer-events-none absolute inset-0 grid place-items-center text-[10px] opacity-60">Seret & tahan untuk bergerak</div>
       )}
     </div>
   )
@@ -101,8 +105,20 @@ export default function MobileControls({ onDirChange, onVacuum, overlay, vacuumA
     const curr = lastDirs.current
     const release = { left: !(x < -REL), right: !(x > REL), up: !(y < -REL), down: !(y > REL) }
     ;(["left","right","up","down"] as const).forEach((d) => {
-      if (want[d] && !curr[d]) { curr[d] = true; onDirChange(d, true) }
-      if (release[d] && curr[d]) { curr[d] = false; onDirChange(d, false) }
+      // Start direction when crossing threshold
+      if (want[d] && !curr[d]) { 
+        curr[d] = true; 
+        onDirChange(d, true) 
+      }
+      // Stop direction when releasing below release threshold
+      if (release[d] && curr[d]) { 
+        curr[d] = false; 
+        onDirChange(d, false) 
+      }
+      // Keep sending "pressed: true" while direction is active (this maintains continuous movement)
+      if (curr[d] && want[d]) {
+        onDirChange(d, true)
+      }
     })
   }
 
