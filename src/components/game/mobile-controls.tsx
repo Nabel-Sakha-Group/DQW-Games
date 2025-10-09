@@ -126,7 +126,11 @@ export default function MobileControls({ onDirChange, onVacuum, overlay, vacuumA
   }, [onDirChange])
 
   return (
-    <div className={"pointer-events-auto mx-auto mt-2 flex w-full items-center justify-between gap-4 px-2 " + (overlay ? "max-w-none" : "max-w-lg") }>
+    <div className={`pointer-events-auto flex w-full items-center justify-between gap-4 ${
+      overlay 
+        ? "max-w-none mx-0 px-4 pb-2" 
+        : "max-w-lg mx-auto mt-2 px-2"
+    }`}>
       <div className="flex items-center gap-3">
         <Joystick onVector={(dx, dy) => applyVector(dx, dy)} />
       </div>

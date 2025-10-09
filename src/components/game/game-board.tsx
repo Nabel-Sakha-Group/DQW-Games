@@ -247,22 +247,47 @@ export default function GameBoard({ onGameOver }: { onGameOver?: (score: number)
   }, [checkRotateHint])
 
   const exitFullscreenAndUnlock = useCallback(async () => {
+    console.log('Exit fullscreen called, current fullscreen element:', document.fullscreenElement)
     try {
+      // Force exit fullscreen regardless of current state
       if (document.fullscreenElement) {
+        console.log('Attempting to exit fullscreen...')
         await document.exitFullscreen()
+        console.log('Exit fullscreen completed')
+      } else {
+        console.log('No fullscreen element found')
       }
+    } catch (error) {
+      console.error('Error exiting fullscreen:', error)
     } finally {
+      // Always update state regardless of API success
+      console.log('Setting fullscreen state to false')
       setIsFullscreen(false)
+      
+      // Clear any game over state to allow interaction
+      if (gameOver) {
+        console.log('Clearing game over state')
+        setGameOver(false)
+      }
+      
       // Unlock orientation if previously locked
       try {
         const orientationLike = (screen as unknown as { orientation?: ScreenOrientationLike }).orientation
         if (orientationLike && typeof orientationLike.unlock === "function") {
           orientationLike.unlock()
+          console.log('Screen orientation unlocked')
         }
-      } catch {}
+      } catch (orientationError) {
+        console.error('Error unlocking orientation:', orientationError)
+      }
       setShowRotateHint(false)
+      
+      // Force a re-render by triggering a resize event
+      setTimeout(() => {
+        window.dispatchEvent(new Event('resize'))
+      }, 100)
     }
-  }, [])
+  }, [gameOver])
 
   const toggleFullscreen = useCallback(() => {
     if (isFullscreen) {
@@ -1243,10 +1268,10 @@ export default function GameBoard({ onGameOver }: { onGameOver?: (score: number)
   }
 
   return (
-    <div ref={wrapperRef} className={"relative " + (isFullscreen ? "fixed inset-0 z-50 bg-background" : "")}>
-      <div className={"mx-auto max-w-6xl rounded-lg border bg-background shadow-lg overflow-hidden " + (isFullscreen ? "h-full w-full max-w-none border-0 p-0" : "p-2") }>
-        <div className="relative rounded-md overflow-hidden isolate bg-muted/30">
-          <canvas ref={canvasRef} className="block w-full rounded-md bg-background border-2 border-border/20" />
+    <div ref={wrapperRef} className={"relative " + (isFullscreen ? "fixed inset-0 z-50 bg-background overflow-hidden" : "")}>
+      <div className={isFullscreen ? "h-full w-full flex flex-col" : "mx-auto max-w-6xl rounded-lg border bg-background shadow-lg overflow-hidden p-2"}>
+        <div className={`relative overflow-hidden isolate ${isFullscreen ? "flex-1 bg-background w-full" : "rounded-md bg-muted/30"}`}>
+          <canvas ref={canvasRef} className={`block ${isFullscreen ? "h-full w-full bg-background" : "w-full rounded-md bg-background border-2 border-border/20"}`} />
           {/* Start overlay */}
           {!started && countdown === null && !gameOver && (
             <div className="absolute inset-0 z-20 flex items-center justify-center bg-background/70 backdrop-blur-sm pointer-events-auto p-4">
@@ -1275,8 +1300,20 @@ export default function GameBoard({ onGameOver }: { onGameOver?: (score: number)
                   </button>
                   {isFullscreen && (
                     <button
-                      className="w-full rounded-md bg-gray-600 text-white px-6 py-3 text-base font-semibold shadow hover:bg-gray-700 focus:outline-none"
-                      onClick={exitFullscreenAndUnlock}
+                      className="w-full rounded-md bg-gray-600 text-white px-6 py-3 text-base font-semibold shadow hover:bg-gray-700 focus:outline-none active:bg-gray-800 touch-manipulation"
+                      onClick={(e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        console.log('Exit fullscreen button clicked')
+                        exitFullscreenAndUnlock()
+                      }}
+                      onTouchEnd={(e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        console.log('Exit fullscreen button touched')
+                        exitFullscreenAndUnlock()
+                      }}
+                      style={{ WebkitTapHighlightColor: 'transparent' }}
                     >
                       📤 Exit Fullscreen
                     </button>
@@ -1303,7 +1340,7 @@ export default function GameBoard({ onGameOver }: { onGameOver?: (score: number)
             </div>
           )}
           
-          <div className={`pointer-events-none absolute ${isFullscreen ? 'left-3 right-3 top-3' : 'left-3 right-3 top-3'} z-10`}>
+          <div className={`pointer-events-none absolute ${isFullscreen ? 'left-0 right-0 top-0' : 'left-3 right-3 top-3'} z-10 ${isFullscreen ? 'px-2 pt-2' : ''}`}>
             <HUD
               score={hud.score}
               timeLeft={hud.timeLeft}
@@ -1329,7 +1366,7 @@ export default function GameBoard({ onGameOver }: { onGameOver?: (score: number)
         </div>
         {/* Mobile controls in fullscreen - show based on displayMode */}
         {isFullscreen && displayMode === 'mobile' && (
-          <div className="pointer-events-none absolute inset-0 z-20 flex items-end justify-between p-4">
+          <div className="pointer-events-none absolute inset-0 z-20 flex items-end justify-between p-2">
             {/* we re-render controls as overlay with pointer events enabled only on inner */}
             <div className="pointer-events-auto w-full">
               <MobileControls overlay vacuumActive={vacuumState} onDirChange={handleDirChange} onVacuum={handleVacuum} />
@@ -1344,8 +1381,8 @@ export default function GameBoard({ onGameOver }: { onGameOver?: (score: number)
           </div>
         )}
         
-        {/* Show desktop controls below canvas on desktop */}
-        {!isMobile && (
+        {/* Show desktop controls below canvas on desktop (non-fullscreen) */}
+        {!isMobile && !isFullscreen && (
           <div className="mt-3 flex justify-center p-2">
             <DesktopControls 
               keys={keyStates} 
@@ -1356,11 +1393,14 @@ export default function GameBoard({ onGameOver }: { onGameOver?: (score: number)
           </div>
         )}
         
-        <div className="mt-3 px-3 pb-2 text-xs opacity-70 text-center">
-          {isMobile
-            ? "Tips: Gunakan tombol kontrol untuk menggerakkan lifter. Tekan Vacuum untuk mengambil/melepas item."
-            : "Tips: Gunakan Arrow Keys/WASD untuk gerak, Spacebar untuk Vacuum. Letakkan item di target yang sesuai."}
-        </div>
+        {/* Tips only show when not in fullscreen */}
+        {!isFullscreen && (
+          <div className="mt-3 px-3 pb-2 text-xs opacity-70 text-center">
+            {isMobile
+              ? "Tips: Gunakan tombol kontrol untuk menggerakkan lifter. Tekan Vacuum untuk mengambil/melepas item."
+              : "Tips: Gunakan Arrow Keys/WASD untuk gerak, Spacebar untuk Vacuum. Letakkan item di target yang sesuai."}
+          </div>
+        )}
       </div>
     </div>
   )
