@@ -327,12 +327,20 @@ export default function GameBoard({ onGameOver }: { onGameOver?: (score: number)
 
     if (gameOverCountdown === 0) {
       // Countdown finished - exit fullscreen and trigger onGameOver
-      if (isFullscreen) {
-        exitFullscreenAndUnlock()
-      }
       setGameOverCountdown(null)
       setGameOver(false) // Don't show game over overlay
-      onGameOver?.(finalScore) // Trigger parent to show input form
+      
+      if (isFullscreen) {
+        // Exit fullscreen first, then trigger onGameOver after a delay
+        exitFullscreenAndUnlock()
+        // Add delay to ensure fullscreen exit is complete before showing modal
+        setTimeout(() => {
+          onGameOver?.(finalScore) // Trigger parent to show input form
+        }, 500)
+      } else {
+        // Not in fullscreen, trigger immediately
+        onGameOver?.(finalScore)
+      }
       return
     }
 

@@ -100,8 +100,8 @@ export default function Page() {
         </div>
         {/* Modal: input name & company on game over */}
         {scoreToSave != null && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-            <div className="w-full max-w-sm rounded-md bg-background p-4 shadow">
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
+            <div className="w-full max-w-sm rounded-md bg-background p-4 shadow-xl border">
               <h3 className="mb-2 text-lg font-semibold">Simpan Skor</h3>
               <p className="mb-3 text-sm opacity-80">Skor kamu: <span className="font-bold">{scoreToSave}</span></p>
               <div className="space-y-3">
@@ -111,7 +111,8 @@ export default function Page() {
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     placeholder="Nama kamu"
-                    className="w-full rounded border bg-transparent px-3 py-2 text-sm"
+                    className="w-full rounded border bg-transparent px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    autoFocus
                   />
                 </div>
                 <div>
@@ -120,7 +121,7 @@ export default function Page() {
                     value={perusahaan}
                     onChange={(e) => setPerusahaan(e.target.value)}
                     placeholder="Perusahaan (opsional)"
-                    className="w-full rounded border bg-transparent px-3 py-2 text-sm"
+                    className="w-full rounded border bg-transparent px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
                 </div>
               </div>
