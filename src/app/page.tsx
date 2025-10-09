@@ -90,9 +90,11 @@ export default function Page() {
         <h1 className="text-balance text-2xl md:text-3xl font-semibold">Pick & Place Factory</h1>
       </header>
       <section className="mx-auto max-w-6xl px-3 sm:px-4 pb-6 sm:pb-8">
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_260px] gap-3 sm:gap-4 items-start">
-          <GameBoard onGameOver={handleGameOver} />
-          <div className="lg:sticky lg:top-4">
+        <div className="flex flex-col xl:flex-row gap-4 sm:gap-6 items-start justify-center">
+          <div className="flex-shrink-0 w-full max-w-3xl mx-auto xl:mx-0">
+            <GameBoard onGameOver={handleGameOver} />
+          </div>
+          <div className="w-full xl:w-80 xl:sticky xl:top-4 flex-shrink-0 mx-auto xl:mx-0">
             <Leaderboard entries={entries} />
           </div>
         </div>

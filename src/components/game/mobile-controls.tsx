@@ -1,6 +1,5 @@
 "use client"
 
-import { Button } from "@/components/ui/button"
 import { useCallback, useEffect, useRef, useState } from "react"
 
 type Props = {
@@ -88,9 +87,6 @@ function Joystick({ onVector }: { onVector: (dx: number, dy: number) => void }) 
         className="pointer-events-none absolute left-1/2 top-1/2 h-10 w-10 -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary text-primary-foreground shadow-lg ring-1 ring-black/10"
         style={{ left: `calc(50% + ${pos.x}px)`, top: `calc(50% + ${pos.y}px)` }}
       />
-      {!dragging && (
-        <div className="pointer-events-none absolute inset-0 grid place-items-center text-[10px] opacity-60">Seret & tahan untuk bergerak</div>
-      )}
     </div>
   )
 }
@@ -135,9 +131,33 @@ export default function MobileControls({ onDirChange, onVacuum, overlay, vacuumA
         <Joystick onVector={(dx, dy) => applyVector(dx, dy)} />
       </div>
       <div className="flex flex-1 justify-end">
-        <Button className={"h-12 w-32 text-base font-semibold " + (vacuumActive ? "bg-emerald-600 hover:bg-emerald-700" : "")} onClick={onVacuum}>
-          Vacuum
-        </Button>
+        <button 
+          className={`relative h-20 w-20 rounded-full border-3 font-semibold text-white shadow-xl transition-all duration-300 focus:outline-none focus:ring-4 active:scale-90 ${
+            vacuumActive 
+              ? "bg-gradient-to-br from-emerald-500 to-emerald-700 hover:from-emerald-600 hover:to-emerald-800 border-emerald-400 shadow-emerald-500/40 ring-emerald-300" 
+              : "bg-gradient-to-br from-blue-500 to-blue-700 hover:from-blue-600 hover:to-blue-800 border-blue-400 shadow-blue-500/40 ring-blue-300"
+          }`}
+          onClick={onVacuum}
+        >
+          {/* Background glow effect */}
+          <div className={`absolute inset-0 rounded-full blur-md opacity-30 ${
+            vacuumActive ? "bg-emerald-400" : "bg-blue-400"
+          }`}></div>
+          
+          {/* Image container with better sizing */}
+          <div className="absolute inset-0 z-10 flex items-center justify-center p-2">
+            <img 
+              src="/images/logo schmalz.png" 
+              alt="Vacuum" 
+              className="w-12 h-6 object-contain filter brightness-0 invert"
+            />
+          </div>
+          
+          {/* Active indicator */}
+          {vacuumActive && (
+            <div className="absolute -top-1 -right-1 w-4 h-4 bg-yellow-400 rounded-full animate-pulse border-2 border-white"></div>
+          )}
+        </button>
       </div>
     </div>
   )

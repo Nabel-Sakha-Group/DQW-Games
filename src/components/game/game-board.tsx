@@ -1244,9 +1244,9 @@ export default function GameBoard({ onGameOver }: { onGameOver?: (score: number)
 
   return (
     <div ref={wrapperRef} className={"relative " + (isFullscreen ? "fixed inset-0 z-50 bg-background" : "")}>
-  <div className={"mx-auto max-w-6xl rounded-lg border bg-background shadow-sm overflow-hidden " + (isFullscreen ? "h-full w-full max-w-none border-0 p-0" : "p-1") }>
-        <div className="relative rounded-md overflow-hidden isolate">
-          <canvas ref={canvasRef} className="block w-full rounded-md bg-background" />
+      <div className={"mx-auto max-w-6xl rounded-lg border bg-background shadow-lg overflow-hidden " + (isFullscreen ? "h-full w-full max-w-none border-0 p-0" : "p-2") }>
+        <div className="relative rounded-md overflow-hidden isolate bg-muted/30">
+          <canvas ref={canvasRef} className="block w-full rounded-md bg-background border-2 border-border/20" />
           {/* Start overlay */}
           {!started && countdown === null && !gameOver && (
             <div className="absolute inset-0 z-20 flex items-center justify-center bg-background/70 backdrop-blur-sm pointer-events-auto p-4">
@@ -1303,55 +1303,19 @@ export default function GameBoard({ onGameOver }: { onGameOver?: (score: number)
             </div>
           )}
           
-          <div className={`pointer-events-none absolute ${isFullscreen ? 'left-2 right-2 top-2' : 'left-2 right-2 top-1'} z-10`}>
+          <div className={`pointer-events-none absolute ${isFullscreen ? 'left-3 right-3 top-3' : 'left-3 right-3 top-3'} z-10`}>
             <HUD
               score={hud.score}
               timeLeft={hud.timeLeft}
               holding={hud.holding}
               onToggleFullscreen={toggleFullscreen}
               isFullscreen={isFullscreen}
+              displayMode={isFullscreen ? displayMode : undefined}
+              onToggleDisplayMode={isFullscreen ? () => setDisplayMode(prev => prev === 'desktop' ? 'mobile' : 'desktop') : undefined}
             />
           </div>
           
-          {/* Display Mode Toggle in Fullscreen - Enhanced visibility */}
-          {isFullscreen && (
-            <div className="pointer-events-none absolute right-2 top-16 z-40">
-              <div className="pointer-events-auto">
-                {/* Extra glow during countdown */}
-                {countdown !== null && (
-                  <div className="absolute inset-0 rounded-lg bg-yellow-400/30 animate-pulse -m-1"></div>
-                )}
-                <button
-                  className={`relative rounded-lg px-4 py-3 text-sm font-semibold shadow-lg transition-all duration-200 border-2 ${
-                    displayMode === 'mobile' 
-                      ? 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-500 shadow-emerald-500/30' 
-                      : 'bg-slate-700 hover:bg-slate-600 text-white border-slate-600 shadow-slate-500/30'
-                  } backdrop-blur-sm ${countdown !== null ? 'animate-bounce' : 'animate-pulse hover:animate-none'} focus:outline-none focus:ring-2 focus:ring-primary/50`}
-                  onClick={() => setDisplayMode(prev => prev === 'desktop' ? 'mobile' : 'desktop')}
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="text-lg">
-                      {displayMode === 'mobile' ? '🎮' : '🖥️'}
-                    </span>
-                    <div className="text-left">
-                      <div className="font-bold">Display</div>
-                      <div className="text-xs opacity-90">{displayMode === 'desktop' ? 'Desktop' : 'Mobile'}</div>
-                    </div>
-                  </div>
-                  {/* Notification badge - more prominent during countdown */}
-                  <div className={`absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full ${countdown !== null ? 'animate-ping' : 'animate-pulse'}`}></div>
-                  <div className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full"></div>
-                  
-                  {/* Countdown indicator */}
-                  {countdown !== null && (
-                    <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 bg-yellow-500 text-black text-xs px-2 py-1 rounded-md font-bold whitespace-nowrap">
-                      Click me now!
-                    </div>
-                  )}
-                </button>
-              </div>
-            </div>
-          )}
+          {/* Display Mode toggle moved into HUD for alignment */}
 
           {/* Rotate hint overlay for mobile in fullscreen portrait */}
           {showRotateHint && isFullscreen && (
@@ -1365,7 +1329,7 @@ export default function GameBoard({ onGameOver }: { onGameOver?: (score: number)
         </div>
         {/* Mobile controls in fullscreen - show based on displayMode */}
         {isFullscreen && displayMode === 'mobile' && (
-          <div className="pointer-events-none absolute inset-0 z-20 flex items-end justify-between p-3">
+          <div className="pointer-events-none absolute inset-0 z-20 flex items-end justify-between p-4">
             {/* we re-render controls as overlay with pointer events enabled only on inner */}
             <div className="pointer-events-auto w-full">
               <MobileControls overlay vacuumActive={vacuumState} onDirChange={handleDirChange} onVacuum={handleVacuum} />
@@ -1375,14 +1339,14 @@ export default function GameBoard({ onGameOver }: { onGameOver?: (score: number)
         
         {/* Show mobile controls below canvas on mobile (non-fullscreen) */}
         {isMobile && !isFullscreen && (
-          <div className="mt-2">
+          <div className="mt-3 p-2">
             <MobileControls vacuumActive={vacuumState} onDirChange={handleDirChange} onVacuum={handleVacuum} />
           </div>
         )}
         
         {/* Show desktop controls below canvas on desktop */}
         {!isMobile && (
-          <div className="mt-2 flex justify-center">
+          <div className="mt-3 flex justify-center p-2">
             <DesktopControls 
               keys={keyStates} 
               vacuum={vacuumState}
@@ -1392,7 +1356,7 @@ export default function GameBoard({ onGameOver }: { onGameOver?: (score: number)
           </div>
         )}
         
-        <div className="mt-3 text-xs opacity-70">
+        <div className="mt-3 px-3 pb-2 text-xs opacity-70 text-center">
           {isMobile
             ? "Tips: Gunakan tombol kontrol untuk menggerakkan lifter. Tekan Vacuum untuk mengambil/melepas item."
             : "Tips: Gunakan Arrow Keys/WASD untuk gerak, Spacebar untuk Vacuum. Letakkan item di target yang sesuai."}
