@@ -90,6 +90,7 @@ export default function GameBoard({ onGameOver }: { onGameOver?: (score: number)
   const [countdown, setCountdown] = useState<number | null>(null)
   const [gameOver, setGameOver] = useState(false)
   const [finalScore, setFinalScore] = useState(0)
+  const [gameOverCountdown, setGameOverCountdown] = useState<number | null>(null)
 
   // Show rotate hint on mobile when in fullscreen but portrait
   const checkRotateHint = useCallback(() => {
@@ -320,6 +321,28 @@ export default function GameBoard({ onGameOver }: { onGameOver?: (score: number)
     return () => document.removeEventListener("fullscreenchange", handler)
   }, [checkRotateHint])
 
+  // Handle game over countdown
+  useEffect(() => {
+    if (gameOverCountdown === null) return
+
+    if (gameOverCountdown === 0) {
+      // Countdown finished - exit fullscreen and trigger onGameOver
+      if (isFullscreen) {
+        exitFullscreenAndUnlock()
+      }
+      setGameOverCountdown(null)
+      setGameOver(false) // Don't show game over overlay
+      onGameOver?.(finalScore) // Trigger parent to show input form
+      return
+    }
+
+    const timer = setTimeout(() => {
+      setGameOverCountdown(prev => prev! - 1)
+    }, 1000)
+
+    return () => clearTimeout(timer)
+  }, [gameOverCountdown, isFullscreen, exitFullscreenAndUnlock, onGameOver, finalScore])
+
   // (removed duplicate checkRotateHint)
 
   // Start game with countdown
@@ -360,8 +383,10 @@ export default function GameBoard({ onGameOver }: { onGameOver?: (score: number)
   // Restart game function
   const restartGame = useCallback(() => {
     setGameOver(false)
+    setGameOverCountdown(null)
     setStarted(false)
     setCountdown(null)
+    gameOverFiredRef.current = false
     // Reset game state
     gameRef.current = { score: 0, timeLeft: GAME_SECONDS, paused: true }
     setHud({ score: 0, timeLeft: GAME_SECONDS, paused: true, holding: null })
@@ -643,12 +668,12 @@ export default function GameBoard({ onGameOver }: { onGameOver?: (score: number)
         update(dt)
       }
 
-      // fire game over once
+      // fire game over countdown once
       if (!gameOverFiredRef.current && g.timeLeft <= 0) {
         gameOverFiredRef.current = true
-        setGameOver(true)
         setFinalScore(g.score)
-        onGameOver?.(g.score)
+        setGameOverCountdown(5) // Start 5 second countdown
+        // Don't call onGameOver immediately - wait for countdown to finish
       }
 
       draw(ctx, width, height, dpr)
@@ -1284,8 +1309,52 @@ export default function GameBoard({ onGameOver }: { onGameOver?: (score: number)
             </div>
           )}
           
-          {/* Game Over overlay */}
-          {gameOver && (
+          {/* Game Over Countdown overlay */}
+          {gameOverCountdown !== null && (
+            <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/90 backdrop-blur-sm pointer-events-auto p-4">
+              <div className="text-center max-w-md">
+                <div className="text-6xl font-bold text-red-500 mb-4">GAME OVER</div>
+                <div className="text-2xl font-semibold mb-2">Final Score</div>
+                <div className="text-4xl font-bold text-primary mb-6">{finalScore}</div>
+                <div className="text-center">
+                  <div className="text-lg text-muted-foreground mb-4">
+                    {gameOverCountdown > 0 ? (
+                      <>Keluar dari fullscreen dalam <span className="text-3xl font-bold text-orange-500 animate-pulse">{gameOverCountdown}</span> detik...</>
+                    ) : (
+                      "Menuju form input..."
+                    )}
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-2 mb-4">
+                    <div 
+                      className="bg-orange-500 h-2 rounded-full transition-all duration-1000 ease-linear"
+                      style={{ width: `${((5 - gameOverCountdown) / 5) * 100}%` }}
+                    ></div>
+                  </div>
+                  <button
+                    className="w-full rounded-md bg-blue-600 text-white px-6 py-2 text-sm font-semibold shadow hover:bg-blue-700 focus:outline-none active:bg-blue-800 touch-manipulation"
+                    onClick={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      console.log('Skip countdown button clicked')
+                      setGameOverCountdown(0) // Skip countdown
+                    }}
+                    onTouchEnd={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      console.log('Skip countdown button touched')
+                      setGameOverCountdown(0)
+                    }}
+                    style={{ WebkitTapHighlightColor: 'transparent' }}
+                  >
+                    ⏭️ Skip dan Input Nama Sekarang
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Traditional Game Over overlay (backup, not used with countdown) */}
+          {gameOver && gameOverCountdown === null && (
             <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/90 backdrop-blur-sm pointer-events-auto p-4">
               <div className="text-center max-w-md">
                 <div className="text-6xl font-bold text-red-500 mb-4">GAME OVER</div>
@@ -1361,6 +1430,7 @@ export default function GameBoard({ onGameOver }: { onGameOver?: (score: number)
               isFullscreen={isFullscreen}
               displayMode={isFullscreen ? displayMode : undefined}
               onToggleDisplayMode={isFullscreen ? () => setDisplayMode(prev => prev === 'desktop' ? 'mobile' : 'desktop') : undefined}
+              onRestart={restartGame}
             />
           </div>
           
@@ -1376,8 +1446,8 @@ export default function GameBoard({ onGameOver }: { onGameOver?: (score: number)
             </div>
           )}
         </div>
-        {/* Mobile controls in fullscreen - show based on displayMode and not during game over */}
-        {isFullscreen && displayMode === 'mobile' && !gameOver && (
+        {/* Mobile controls in fullscreen - show based on displayMode and not during game over or countdown */}
+        {isFullscreen && displayMode === 'mobile' && !gameOver && gameOverCountdown === null && (
           <div className="pointer-events-none absolute inset-0 z-20 flex items-end justify-between p-2">
             {/* we re-render controls as overlay with pointer events enabled only on inner */}
             <div className="pointer-events-auto w-full">

@@ -8,9 +8,10 @@ type Props = {
   isFullscreen?: boolean
   displayMode?: 'desktop' | 'mobile'
   onToggleDisplayMode?: () => void
+  onRestart?: () => void
 }
 
-export function HUD({ score, timeLeft, holding, onToggleFullscreen, isFullscreen, displayMode, onToggleDisplayMode }: Props) {
+export function HUD({ score, timeLeft, holding, onToggleFullscreen, isFullscreen, displayMode, onToggleDisplayMode, onRestart }: Props) {
   return (
     <div className="pointer-events-auto flex w-full items-center justify-between gap-2 rounded-lg bg-background/80 px-3 py-2.5 backdrop-blur-sm border border-border/50 shadow-sm">
       <div className="flex items-center gap-3 min-w-0 flex-1">
@@ -33,6 +34,16 @@ export function HUD({ score, timeLeft, holding, onToggleFullscreen, isFullscreen
           >
             <span className="mr-1">{displayMode === 'mobile' ? '🎮' : '🖥️'}</span>
             <span className="hidden sm:inline">Display: </span>{displayMode === 'mobile' ? 'Mobile' : 'Desktop'}
+          </button>
+        )}
+        {onRestart && (
+          <button
+            type="button"
+            className="inline-flex items-center rounded-md bg-green-600 text-white border-green-500 hover:bg-green-700 px-2.5 py-1.5 text-xs font-semibold transition-all duration-200 shadow-sm"
+            onClick={onRestart}
+          >
+            <span className="mr-1">🔄</span>
+            <span className="hidden sm:inline">Restart</span>
           </button>
         )}
         {onToggleFullscreen && (
