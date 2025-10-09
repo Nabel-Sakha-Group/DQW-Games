@@ -1286,15 +1286,27 @@ export default function GameBoard({ onGameOver }: { onGameOver?: (score: number)
           
           {/* Game Over overlay */}
           {gameOver && (
-            <div className="absolute inset-0 z-30 flex items-center justify-center bg-background/90 backdrop-blur-sm pointer-events-auto p-4">
+            <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/90 backdrop-blur-sm pointer-events-auto p-4">
               <div className="text-center max-w-md">
                 <div className="text-6xl font-bold text-red-500 mb-4">GAME OVER</div>
                 <div className="text-2xl font-semibold mb-2">Final Score</div>
                 <div className="text-4xl font-bold text-primary mb-6">{finalScore}</div>
                 <div className="space-y-3">
                   <button
-                    className="w-full rounded-md bg-green-600 text-white px-6 py-3 text-base font-semibold shadow hover:bg-green-700 focus:outline-none"
-                    onClick={restartGame}
+                    className="w-full rounded-md bg-green-600 text-white px-6 py-3 text-base font-semibold shadow hover:bg-green-700 focus:outline-none active:bg-green-800 touch-manipulation"
+                    onClick={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      console.log('Restart button clicked')
+                      restartGame()
+                    }}
+                    onTouchEnd={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      console.log('Restart button touched')
+                      restartGame()
+                    }}
+                    style={{ WebkitTapHighlightColor: 'transparent' }}
                   >
                     🔄 Play Again
                   </button>
@@ -1364,8 +1376,8 @@ export default function GameBoard({ onGameOver }: { onGameOver?: (score: number)
             </div>
           )}
         </div>
-        {/* Mobile controls in fullscreen - show based on displayMode */}
-        {isFullscreen && displayMode === 'mobile' && (
+        {/* Mobile controls in fullscreen - show based on displayMode and not during game over */}
+        {isFullscreen && displayMode === 'mobile' && !gameOver && (
           <div className="pointer-events-none absolute inset-0 z-20 flex items-end justify-between p-2">
             {/* we re-render controls as overlay with pointer events enabled only on inner */}
             <div className="pointer-events-auto w-full">
