@@ -450,20 +450,24 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
       
       if (error) {
         console.error("Failed to save score:", error.message)
-        // Still exit fullscreen and continue
+        // Still continue to reset
       } else {
+        console.log("Score saved successfully")
         // Refresh leaderboard if callback provided
         onLeaderboardUpdate?.()
       }
     } catch (error) {
       console.error("Supabase not available:", error)
-      // Still exit fullscreen and continue
+      // Still continue to reset
     }
     
     setSaving(false)
     
-    // Exit fullscreen and reset
-    if (isFullscreen) {
+    // Reset states tetapi jangan keluar fullscreen di mobile untuk menghindari refresh
+    const isMobileDevice = detectDeviceType() === 'mobile'
+    
+    if (!isMobileDevice && isFullscreen) {
+      // Hanya keluar fullscreen di desktop/laptop
       exitFullscreenAndUnlock()
     }
     
@@ -475,7 +479,7 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
     gameOverFiredRef.current = false
     gameRef.current = { score: 0, timeLeft: GAME_SECONDS, paused: true }
     setHud({ score: 0, timeLeft: GAME_SECONDS, paused: true, holding: null })
-  }, [name, perusahaan, finalScore, isFullscreen, exitFullscreenAndUnlock, onLeaderboardUpdate])
+  }, [name, perusahaan, finalScore, isFullscreen, exitFullscreenAndUnlock, onLeaderboardUpdate, detectDeviceType])
 
   useEffect(() => {
     checkRotateHint()
@@ -798,7 +802,6 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
       // Gunakan analog input langsung (range -1 sampai 1)
       dirX = analog.x
       dirY = analog.y
-      console.log(`Using analog: dirX=${dirX.toFixed(2)}, dirY=${dirY.toFixed(2)}`)
     } else {
       // Fallback ke digital input (keyboard)
       dirX = (keysRef.current.right ? 1 : 0) - (keysRef.current.left ? 1 : 0)
@@ -1341,10 +1344,8 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
     if (dir === "analog" && typeof pressed === "object") {
       // Analog input - simpan koordinat joystick
       analogInputRef.current = pressed
-      console.log(`Analog input: x=${pressed.x.toFixed(2)}, y=${pressed.y.toFixed(2)}`)
     } else if (typeof pressed === "boolean") {
       // Digital input (keyboard fallback)
-      console.log(`handleDirChange: ${dir} = ${pressed}`)
       keysRef.current[dir as "left" | "right" | "up" | "down"] = pressed
       setKeyStates(prev => ({ ...prev, [dir]: pressed }))
     }
