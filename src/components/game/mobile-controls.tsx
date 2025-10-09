@@ -1,9 +1,10 @@
 "use client"
 
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useRef, useState, useEffect } from "react"
+import Image from "next/image"
 
 type Props = {
-  onDirChange: (dir: "left" | "right" | "up" | "down", pressed: boolean) => void
+  onDirChange: (dir: "left" | "right" | "up" | "down" | "analog", pressed: boolean | {x: number, y: number}) => void
   onVacuum: () => void
   overlay?: boolean
   vacuumActive?: boolean
@@ -15,7 +16,7 @@ function Joystick({ onVector }: { onVector: (dx: number, dy: number) => void }) 
   const [pos, setPos] = useState<{x:number;y:number}>({x:0,y:0})
   const [active, setActive] = useState(false)
   const radius = 42 // travel radius
-  const dead = 10
+  const dead = 4  // Deadzone kecil untuk analog
   const vecRef = useRef<{x:number;y:number}>({x:0,y:0})
   const rafRef = useRef<number | null>(null)
 
@@ -43,6 +44,16 @@ function Joystick({ onVector }: { onVector: (dx: number, dy: number) => void }) 
     setActive(mag > 0)
   }, [onVector])
 
+  // Cleanup RAF on unmount
+  useEffect(() => {
+    return () => {
+      if (rafRef.current) {
+        cancelAnimationFrame(rafRef.current)
+        rafRef.current = null
+      }
+    }
+  }, [])
+
   // No global listeners; rely on pointer capture to keep events flowing
 
   return (
@@ -56,12 +67,13 @@ function Joystick({ onVector }: { onVector: (dx: number, dy: number) => void }) 
         ;(e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId)
         setDragging(true)
         updateFromEvent(e.clientX, e.clientY)
-        // start keep-alive loop
+        
+        // Start continuous update loop untuk analog input
         const tick = () => {
           onVector(vecRef.current.x, vecRef.current.y)
           rafRef.current = requestAnimationFrame(tick)
         }
-        if (!rafRef.current) rafRef.current = requestAnimationFrame(tick)
+        rafRef.current = requestAnimationFrame(tick)
       }}
       onPointerMove={(e) => {
         if (!dragging) return
@@ -75,9 +87,23 @@ function Joystick({ onVector }: { onVector: (dx: number, dy: number) => void }) 
         setActive(false)
         vecRef.current = {x:0,y:0}
         onVector(0,0)
-        if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null }
+        if (rafRef.current) {
+          cancelAnimationFrame(rafRef.current)
+          rafRef.current = null
+        }
       }}
-      onPointerCancel={() => { setDragging(false); setPos({x:0, y:0}); setActive(false); vecRef.current = {x:0,y:0}; onVector(0,0); if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null } }}
+      onPointerCancel={(e) => { 
+        e.preventDefault()
+        setDragging(false) 
+        setPos({x:0, y:0}) 
+        setActive(false) 
+        vecRef.current = {x:0,y:0} 
+        onVector(0,0) 
+        if (rafRef.current) {
+          cancelAnimationFrame(rafRef.current)
+          rafRef.current = null
+        }
+      }}
     >
       {/* guide ring */}
       <div className={"pointer-events-none absolute left-1/2 top-1/2 h-24 w-24 -translate-x-1/2 -translate-y-1/2 rounded-full border " + (active ? "border-primary/70 shadow-[0_0_12px_rgba(59,130,246,0.35)]" : "border-border/60")} />
@@ -92,37 +118,12 @@ function Joystick({ onVector }: { onVector: (dx: number, dy: number) => void }) 
 }
 
 export default function MobileControls({ onDirChange, onVacuum, overlay, vacuumActive }: Props) {
-  const lastDirs = useRef({left:false,right:false,up:false,down:false})
-  const TH = 0.35
-  const REL = 0.25
-
-  const applyVector = (x: number, y: number) => {
-    const want = { left: x < -TH, right: x > TH, up: y < -TH, down: y > TH }
-    const curr = lastDirs.current
-    const release = { left: !(x < -REL), right: !(x > REL), up: !(y < -REL), down: !(y > REL) }
-    ;(["left","right","up","down"] as const).forEach((d) => {
-      // Start direction when crossing threshold
-      if (want[d] && !curr[d]) { 
-        curr[d] = true; 
-        onDirChange(d, true) 
-      }
-      // Stop direction when releasing below release threshold
-      if (release[d] && curr[d]) { 
-        curr[d] = false; 
-        onDirChange(d, false) 
-      }
-      // Keep sending "pressed: true" while direction is active (this maintains continuous movement)
-      if (curr[d] && want[d]) {
-        onDirChange(d, true)
-      }
-    })
-  }
-
-  useEffect(() => {
-    const snapshot = { ...lastDirs.current }
-    return () => {
-      ;(["left","right","up","down"] as const).forEach((d) => { if (snapshot[d]) onDirChange(d, false) })
-    }
+  // Tidak perlu lastDirs karena kita menggunakan sistem analog langsung
+  
+  const applyVector = useCallback((x: number, y: number) => {
+    // Kirim koordinat analog langsung ke parent
+    // x dan y sudah dalam range -1 sampai 1 dari joystick
+    onDirChange('analog', { x, y })
   }, [onDirChange])
 
   return (
@@ -150,10 +151,12 @@ export default function MobileControls({ onDirChange, onVacuum, overlay, vacuumA
           
           {/* Image container with better sizing */}
           <div className="absolute inset-0 z-10 flex items-center justify-center p-2">
-            <img 
+            <Image 
               src="/images/logo schmalz.png" 
               alt="Vacuum" 
-              className="w-12 h-6 object-contain filter brightness-0 invert"
+              width={48}
+              height={24}
+              className="object-contain filter brightness-0 invert"
             />
           </div>
           

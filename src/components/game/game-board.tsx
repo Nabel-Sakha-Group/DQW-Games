@@ -8,6 +8,7 @@ import { HUD } from "./hud"
 import MobileControls from "./mobile-controls"
 import DesktopControls from "./desktop-controls"
 import { useMediaQuery } from "@/components/ui/use-mobile" // returns boolean for mobile width
+import { getSupabase } from "@/lib/supabaseClient"
 
 type ItemType = "bottle" | "pcb" | "glass" | "box"
 
@@ -70,7 +71,7 @@ function clamp(v: number, min: number, max: number) {
   return Math.max(min, Math.min(max, v))
 }
 
-export default function GameBoard({ onGameOver }: { onGameOver?: (score: number) => void }) {
+export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate?: () => void }) {
   const wrapperRef = useRef<HTMLDivElement | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const bgImgRef = useRef<HTMLImageElement | null>(null)
@@ -87,10 +88,56 @@ export default function GameBoard({ onGameOver }: { onGameOver?: (score: number)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [showRotateHint, setShowRotateHint] = useState(false)
   const [displayMode, setDisplayMode] = useState<'desktop' | 'mobile'>('desktop')
+  const [autoDetected, setAutoDetected] = useState(true)
+
+  // Function untuk mendeteksi device type
+  const detectDeviceType = useCallback(() => {
+    const userAgent = navigator.userAgent.toLowerCase()
+    const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0
+    const hasPhysicalKeyboard = window.matchMedia('(hover: hover) and (pointer: fine)').matches
+    const screenWidth = window.screen.width
+    const screenHeight = window.screen.height
+    const smallScreen = Math.min(screenWidth, screenHeight) <= 768
+    const pixelRatio = window.devicePixelRatio || 1
+    
+    // Deteksi tablet (touch device dengan screen besar)
+    const isTablet = isTouchDevice && Math.min(screenWidth, screenHeight) > 768
+    
+    // Deteksi mobile device berdasarkan multiple criteria
+    const isMobileDevice = (
+      // User agent detection (smartphone/mobile)
+      /android.*mobile|webos|iphone|ipod|blackberry|iemobile|opera mini|mobile/i.test(userAgent) ||
+      // Touch device dengan screen kecil (smartphone)
+      (isTouchDevice && smallScreen && !isTablet) ||
+      // Tidak ada hover capability dan screen kecil
+      (!hasPhysicalKeyboard && smallScreen)
+    )
+    
+    // Untuk tablet, cek orientation untuk menentukan mode
+    const isTabletInPortrait = isTablet && window.innerHeight > window.innerWidth
+    
+    console.log('Device detection:', {
+      userAgent: userAgent.substring(0, 50) + '...',
+      isTouchDevice,
+      hasPhysicalKeyboard,
+      screenWidth,
+      screenHeight,
+      smallScreen,
+      isTablet,
+      isTabletInPortrait,
+      pixelRatio,
+      isMobileDevice
+    })
+    
+    // Logic: mobile untuk smartphone, tablet dalam portrait, atau device tanpa keyboard fisik
+    return (isMobileDevice || isTabletInPortrait) ? 'mobile' : 'desktop'
+  }, [])
   const [countdown, setCountdown] = useState<number | null>(null)
   const [gameOver, setGameOver] = useState(false)
   const [finalScore, setFinalScore] = useState(0)
-  const [gameOverCountdown, setGameOverCountdown] = useState<number | null>(null)
+  const [name, setName] = useState("")
+  const [perusahaan, setPerusahaan] = useState("")
+  const [saving, setSaving] = useState(false)
 
   // Show rotate hint on mobile when in fullscreen but portrait
   const checkRotateHint = useCallback(() => {
@@ -313,43 +360,27 @@ export default function GameBoard({ onGameOver }: { onGameOver?: (score: number)
         } catch {}
         setShowRotateHint(false)
       } else {
-        // entering fullscreen
+        // entering fullscreen - auto-detect device type
+        const detectedMode = detectDeviceType()
+        console.log(`Auto-detected device type: ${detectedMode}`)
+        setDisplayMode(detectedMode)
+        setAutoDetected(true) // Mark as auto-detected
         checkRotateHint()
       }
     }
     document.addEventListener("fullscreenchange", handler)
     return () => document.removeEventListener("fullscreenchange", handler)
-  }, [checkRotateHint])
+  }, [checkRotateHint, detectDeviceType])
 
-  // Handle game over countdown
+  // Auto-detect device type on component mount
   useEffect(() => {
-    if (gameOverCountdown === null) return
+    const detectedMode = detectDeviceType()
+    console.log(`Initial device detection: ${detectedMode}`)
+    setDisplayMode(detectedMode)
+    setAutoDetected(true) // Mark as auto-detected
+  }, [detectDeviceType])
 
-    if (gameOverCountdown === 0) {
-      // Countdown finished - exit fullscreen and trigger onGameOver
-      setGameOverCountdown(null)
-      setGameOver(false) // Don't show game over overlay
-      
-      if (isFullscreen) {
-        // Exit fullscreen first, then trigger onGameOver after a delay
-        exitFullscreenAndUnlock()
-        // Add delay to ensure fullscreen exit is complete before showing modal
-        setTimeout(() => {
-          onGameOver?.(finalScore) // Trigger parent to show input form
-        }, 500)
-      } else {
-        // Not in fullscreen, trigger immediately
-        onGameOver?.(finalScore)
-      }
-      return
-    }
-
-    const timer = setTimeout(() => {
-      setGameOverCountdown(prev => prev! - 1)
-    }, 1000)
-
-    return () => clearTimeout(timer)
-  }, [gameOverCountdown, isFullscreen, exitFullscreenAndUnlock, onGameOver, finalScore])
+  // (removed countdown useEffect - game over now goes directly to input form)
 
   // (removed duplicate checkRotateHint)
 
@@ -357,7 +388,8 @@ export default function GameBoard({ onGameOver }: { onGameOver?: (score: number)
   const startGameWithCountdown = useCallback(() => {
     setCountdown(3)
     
-    // Auto fullscreen saat game start
+    // Auto fullscreen saat game start - reset auto-detect untuk re-detect device
+    setAutoDetected(true) 
     requestFullscreenAndLock()
     
     const countdownInterval = setInterval(() => {
@@ -391,14 +423,59 @@ export default function GameBoard({ onGameOver }: { onGameOver?: (score: number)
   // Restart game function
   const restartGame = useCallback(() => {
     setGameOver(false)
-    setGameOverCountdown(null)
     setStarted(false)
     setCountdown(null)
+    setName("")
+    setPerusahaan("")
+    setSaving(false)
     gameOverFiredRef.current = false
     // Reset game state
     gameRef.current = { score: 0, timeLeft: GAME_SECONDS, paused: true }
     setHud({ score: 0, timeLeft: GAME_SECONDS, paused: true, holding: null })
   }, [])
+
+  // Save score function
+  const saveScore = useCallback(async () => {
+    const player = name.trim() || "Player"
+    const company = perusahaan.trim() || null
+    setSaving(true)
+    
+    try {
+      const supabase = getSupabase()
+      const { error } = await supabase.from("leaderboard").insert({ 
+        name: player, 
+        perusahaan: company, 
+        score: finalScore 
+      })
+      
+      if (error) {
+        console.error("Failed to save score:", error.message)
+        // Still exit fullscreen and continue
+      } else {
+        // Refresh leaderboard if callback provided
+        onLeaderboardUpdate?.()
+      }
+    } catch (error) {
+      console.error("Supabase not available:", error)
+      // Still exit fullscreen and continue
+    }
+    
+    setSaving(false)
+    
+    // Exit fullscreen and reset
+    if (isFullscreen) {
+      exitFullscreenAndUnlock()
+    }
+    
+    // Reset all states
+    setGameOver(false)
+    setName("")
+    setPerusahaan("")
+    setStarted(false)
+    gameOverFiredRef.current = false
+    gameRef.current = { score: 0, timeLeft: GAME_SECONDS, paused: true }
+    setHud({ score: 0, timeLeft: GAME_SECONDS, paused: true, holding: null })
+  }, [name, perusahaan, finalScore, isFullscreen, exitFullscreenAndUnlock, onLeaderboardUpdate])
 
   useEffect(() => {
     checkRotateHint()
@@ -676,12 +753,12 @@ export default function GameBoard({ onGameOver }: { onGameOver?: (score: number)
         update(dt)
       }
 
-      // fire game over countdown once
+      // fire game over once
       if (!gameOverFiredRef.current && g.timeLeft <= 0) {
         gameOverFiredRef.current = true
         setFinalScore(g.score)
-        setGameOverCountdown(5) // Start 5 second countdown
-        // Don't call onGameOver immediately - wait for countdown to finish
+        setGameOver(true) // Show game over screen directly
+        // Don't call onGameOver - input form is now part of game over screen
       }
 
       draw(ctx, width, height, dpr)
@@ -711,9 +788,23 @@ export default function GameBoard({ onGameOver }: { onGameOver?: (score: number)
     const conveyor = conveyorRef.current
     const items = itemsRef.current
 
-    // Move lifter
-    const dirX = (keysRef.current.right ? 1 : 0) - (keysRef.current.left ? 1 : 0)
-    const dirY = (keysRef.current.down ? 1 : 0) - (keysRef.current.up ? 1 : 0)
+    // Move lifter - gunakan analog input jika tersedia, fallback ke digital
+    const analog = analogInputRef.current
+    const hasAnalogInput = Math.abs(analog.x) > 0.1 || Math.abs(analog.y) > 0.1 // deadzone 0.1
+    
+    let dirX: number, dirY: number
+    
+    if (hasAnalogInput) {
+      // Gunakan analog input langsung (range -1 sampai 1)
+      dirX = analog.x
+      dirY = analog.y
+      console.log(`Using analog: dirX=${dirX.toFixed(2)}, dirY=${dirY.toFixed(2)}`)
+    } else {
+      // Fallback ke digital input (keyboard)
+      dirX = (keysRef.current.right ? 1 : 0) - (keysRef.current.left ? 1 : 0)
+      dirY = (keysRef.current.down ? 1 : 0) - (keysRef.current.up ? 1 : 0)
+    }
+    
     lifterTargetRef.current.x += dirX * lifter.speed * dt
     lifterTargetRef.current.y += dirY * lifter.speed * dt
     lifterTargetRef.current.x = clamp(lifterTargetRef.current.x, 10, w - lifter.w - 10)
@@ -1244,9 +1335,19 @@ export default function GameBoard({ onGameOver }: { onGameOver?: (score: number)
   }
 
   // Mobile controls handlers
-  const handleDirChange = (dir: "left" | "right" | "up" | "down", pressed: boolean) => {
-    keysRef.current[dir] = pressed
-    setKeyStates(prev => ({ ...prev, [dir]: pressed }))
+  const analogInputRef = useRef<{x: number, y: number}>({x: 0, y: 0})
+  
+  const handleDirChange = (dir: "left" | "right" | "up" | "down" | "analog", pressed: boolean | {x: number, y: number}) => {
+    if (dir === "analog" && typeof pressed === "object") {
+      // Analog input - simpan koordinat joystick
+      analogInputRef.current = pressed
+      console.log(`Analog input: x=${pressed.x.toFixed(2)}, y=${pressed.y.toFixed(2)}`)
+    } else if (typeof pressed === "boolean") {
+      // Digital input (keyboard fallback)
+      console.log(`handleDirChange: ${dir} = ${pressed}`)
+      keysRef.current[dir as "left" | "right" | "up" | "down"] = pressed
+      setKeyStates(prev => ({ ...prev, [dir]: pressed }))
+    }
   }
   const handleVacuum = () => toggleVacuum()
 
@@ -1317,96 +1418,74 @@ export default function GameBoard({ onGameOver }: { onGameOver?: (score: number)
             </div>
           )}
           
-          {/* Game Over Countdown overlay */}
-          {gameOverCountdown !== null && (
+          {/* Game Over Screen with Input Form */}
+          {gameOver && (
             <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/90 backdrop-blur-sm pointer-events-auto p-4">
-              <div className="text-center max-w-md">
+              <div className="text-center max-w-md w-full">
                 <div className="text-6xl font-bold text-red-500 mb-4">GAME OVER</div>
                 <div className="text-2xl font-semibold mb-2">Final Score</div>
                 <div className="text-4xl font-bold text-primary mb-6">{finalScore}</div>
-                <div className="text-center">
-                  <div className="text-lg text-muted-foreground mb-4">
-                    {gameOverCountdown > 0 ? (
-                      <>Keluar dari fullscreen dalam <span className="text-3xl font-bold text-orange-500 animate-pulse">{gameOverCountdown}</span> detik...</>
-                    ) : (
-                      "Menuju form input..."
-                    )}
+                
+                {/* Input Form */}
+                <div className="space-y-4 mb-6">
+                  <div>
+                    <label className="block text-sm font-medium mb-1 text-left">Nama</label>
+                    <input
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      placeholder="Nama kamu"
+                      className="w-full rounded border bg-transparent px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      autoFocus
+                      disabled={saving}
+                    />
                   </div>
-                  <div className="w-full bg-gray-200 rounded-full h-2 mb-4">
-                    <div 
-                      className="bg-orange-500 h-2 rounded-full transition-all duration-1000 ease-linear"
-                      style={{ width: `${((5 - gameOverCountdown) / 5) * 100}%` }}
-                    ></div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1 text-left">Perusahaan</label>
+                    <input
+                      value={perusahaan}
+                      onChange={(e) => setPerusahaan(e.target.value)}
+                      placeholder="Perusahaan (opsional)"
+                      className="w-full rounded border bg-transparent px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      disabled={saving}
+                    />
                   </div>
-                  <button
-                    className="w-full rounded-md bg-blue-600 text-white px-6 py-2 text-sm font-semibold shadow hover:bg-blue-700 focus:outline-none active:bg-blue-800 touch-manipulation"
-                    onClick={(e) => {
-                      e.preventDefault()
-                      e.stopPropagation()
-                      console.log('Skip countdown button clicked')
-                      setGameOverCountdown(0) // Skip countdown
-                    }}
-                    onTouchEnd={(e) => {
-                      e.preventDefault()
-                      e.stopPropagation()
-                      console.log('Skip countdown button touched')
-                      setGameOverCountdown(0)
-                    }}
-                    style={{ WebkitTapHighlightColor: 'transparent' }}
-                  >
-                    ⏭️ Skip dan Input Nama Sekarang
-                  </button>
                 </div>
-              </div>
-            </div>
-          )}
 
-          {/* Traditional Game Over overlay (backup, not used with countdown) */}
-          {gameOver && gameOverCountdown === null && (
-            <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/90 backdrop-blur-sm pointer-events-auto p-4">
-              <div className="text-center max-w-md">
-                <div className="text-6xl font-bold text-red-500 mb-4">GAME OVER</div>
-                <div className="text-2xl font-semibold mb-2">Final Score</div>
-                <div className="text-4xl font-bold text-primary mb-6">{finalScore}</div>
                 <div className="space-y-3">
                   <button
-                    className="w-full rounded-md bg-green-600 text-white px-6 py-3 text-base font-semibold shadow hover:bg-green-700 focus:outline-none active:bg-green-800 touch-manipulation"
+                    className="w-full rounded-md bg-blue-600 text-white px-6 py-3 text-base font-semibold shadow hover:bg-blue-700 focus:outline-none active:bg-blue-800 touch-manipulation disabled:opacity-50"
                     onClick={(e) => {
                       e.preventDefault()
                       e.stopPropagation()
-                      console.log('Restart button clicked')
-                      restartGame()
+                      saveScore()
                     }}
                     onTouchEnd={(e) => {
                       e.preventDefault()
                       e.stopPropagation()
-                      console.log('Restart button touched')
-                      restartGame()
+                      if (!saving) saveScore()
                     }}
+                    disabled={saving}
                     style={{ WebkitTapHighlightColor: 'transparent' }}
                   >
-                    🔄 Play Again
+                    {saving ? "� Menyimpan..." : "💾 Simpan & Keluar"}
                   </button>
-                  {isFullscreen && (
-                    <button
-                      className="w-full rounded-md bg-gray-600 text-white px-6 py-3 text-base font-semibold shadow hover:bg-gray-700 focus:outline-none active:bg-gray-800 touch-manipulation"
-                      onClick={(e) => {
-                        e.preventDefault()
-                        e.stopPropagation()
-                        console.log('Exit fullscreen button clicked')
-                        exitFullscreenAndUnlock()
-                      }}
-                      onTouchEnd={(e) => {
-                        e.preventDefault()
-                        e.stopPropagation()
-                        console.log('Exit fullscreen button touched')
-                        exitFullscreenAndUnlock()
-                      }}
-                      style={{ WebkitTapHighlightColor: 'transparent' }}
-                    >
-                      📤 Exit Fullscreen
-                    </button>
-                  )}
+                  <button
+                    className="w-full rounded-md bg-green-600 text-white px-6 py-3 text-base font-semibold shadow hover:bg-green-700 focus:outline-none active:bg-green-800 touch-manipulation disabled:opacity-50"
+                    onClick={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      if (!saving) restartGame()
+                    }}
+                    onTouchEnd={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      if (!saving) restartGame()
+                    }}
+                    disabled={saving}
+                    style={{ WebkitTapHighlightColor: 'transparent' }}
+                  >
+                    🔄 Main Lagi
+                  </button>
                 </div>
               </div>
             </div>
@@ -1437,8 +1516,12 @@ export default function GameBoard({ onGameOver }: { onGameOver?: (score: number)
               onToggleFullscreen={toggleFullscreen}
               isFullscreen={isFullscreen}
               displayMode={isFullscreen ? displayMode : undefined}
-              onToggleDisplayMode={isFullscreen ? () => setDisplayMode(prev => prev === 'desktop' ? 'mobile' : 'desktop') : undefined}
+              onToggleDisplayMode={isFullscreen ? () => {
+                setDisplayMode(prev => prev === 'desktop' ? 'mobile' : 'desktop')
+                setAutoDetected(false) // Mark as manually changed
+              } : undefined}
               onRestart={restartGame}
+              autoDetected={autoDetected}
             />
           </div>
           
@@ -1455,7 +1538,7 @@ export default function GameBoard({ onGameOver }: { onGameOver?: (score: number)
           )}
         </div>
         {/* Mobile controls in fullscreen - show based on displayMode and not during game over or countdown */}
-        {isFullscreen && displayMode === 'mobile' && !gameOver && gameOverCountdown === null && (
+        {isFullscreen && displayMode === 'mobile' && !gameOver && (
           <div className="pointer-events-none absolute inset-0 z-20 flex items-end justify-between p-2">
             {/* we re-render controls as overlay with pointer events enabled only on inner */}
             <div className="pointer-events-auto w-full">

@@ -9,9 +9,10 @@ type Props = {
   displayMode?: 'desktop' | 'mobile'
   onToggleDisplayMode?: () => void
   onRestart?: () => void
+  autoDetected?: boolean
 }
 
-export function HUD({ score, timeLeft, holding, onToggleFullscreen, isFullscreen, displayMode, onToggleDisplayMode, onRestart }: Props) {
+export function HUD({ score, timeLeft, holding, onToggleFullscreen, isFullscreen, displayMode, onToggleDisplayMode, onRestart, autoDetected }: Props) {
   return (
     <div className="pointer-events-auto flex w-full items-center justify-between gap-2 rounded-lg bg-background/80 px-3 py-2.5 backdrop-blur-sm border border-border/50 shadow-sm">
       <div className="flex items-center gap-3 min-w-0 flex-1">
@@ -31,9 +32,11 @@ export function HUD({ score, timeLeft, holding, onToggleFullscreen, isFullscreen
             type="button"
             className={`inline-flex items-center rounded-md px-2.5 py-1.5 text-xs font-semibold transition-all duration-200 border ${displayMode === 'mobile' ? 'bg-emerald-600 text-white border-emerald-500 hover:bg-emerald-700' : 'bg-slate-700 text-white border-slate-600 hover:bg-slate-600'} shadow-sm`}
             onClick={onToggleDisplayMode}
+            title={autoDetected ? `Auto-detected: ${displayMode}` : `Manual: ${displayMode}`}
           >
             <span className="mr-1">{displayMode === 'mobile' ? '🎮' : '🖥️'}</span>
             <span className="hidden sm:inline">Display: </span>{displayMode === 'mobile' ? 'Mobile' : 'Desktop'}
+            {autoDetected && <span className="ml-1 text-green-300">●</span>}
           </button>
         )}
         {onRestart && (
