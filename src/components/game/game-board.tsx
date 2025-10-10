@@ -142,6 +142,12 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
   // Protection flag to prevent accidental game resets during input interaction
   const [isInputting, setIsInputting] = useState(false)
 
+  // iOS detection for better handling
+  const isIOS = useMemo(() => {
+    return /iPad|iPhone|iPod/.test(navigator.userAgent) || 
+           (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+  }, [])
+
   // Debug logging for critical state changes (can be removed after testing)
   useEffect(() => {
     console.log('🎮 Game state:', { gameOver, name: name.length > 0 ? `"${name}"` : 'empty', perusahaan: perusahaan.length > 0 ? `"${perusahaan}"` : 'empty', saving, isInputting })
@@ -320,15 +326,111 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
 
   
 
-  // Fullscreen helpers
+  // Fullscreen helpers dengan true iOS fullscreen API
   const requestFullscreenAndLock = useCallback(async () => {
     try {
       const el = wrapperRef.current
-      if (!el) return
+      const canvas = canvasRef.current
+      if (!el || !canvas) return
+      
+      // iOS Safari - gunakan canvas requestFullscreen dengan webkit prefixes
+      if (isIOS) {
+        console.log('🍎 iOS detected - using canvas webkit fullscreen')
+        
+        try {
+          // Try multiple iOS Safari fullscreen methods
+          const canvasEl = canvas as HTMLCanvasElement & { 
+            webkitRequestFullscreen?: () => Promise<void>
+            webkitRequestFullScreen?: () => Promise<void>
+          }
+          
+          // Method 1: webkitRequestFullscreen on canvas
+          if (canvasEl.webkitRequestFullscreen) {
+            console.log('Using webkitRequestFullscreen on canvas')
+            await canvasEl.webkitRequestFullscreen()
+            setIsFullscreen(true)
+            checkRotateHint()
+            return
+          }
+          
+          // Method 2: webkitRequestFullScreen (capital S)
+          if (canvasEl.webkitRequestFullScreen) {
+            console.log('Using webkitRequestFullScreen on canvas')
+            await canvasEl.webkitRequestFullScreen()
+            setIsFullscreen(true)
+            checkRotateHint()
+            return
+          }
+          
+          // Method 3: Standard requestFullscreen on canvas
+          if (canvasEl.requestFullscreen) {
+            console.log('Using standard requestFullscreen on canvas')
+            await canvasEl.requestFullscreen()
+            setIsFullscreen(true)
+            checkRotateHint()
+            return
+          }
+          
+          console.log('No fullscreen method available, using enhanced pseudo-fullscreen')
+          // Enhanced pseudo-fullscreen with better iOS handling
+          setIsFullscreen(true)
+          
+          // Aggressive Safari UI hiding
+          document.body.style.overflow = 'hidden'
+          document.documentElement.style.overflow = 'hidden'
+          document.body.style.height = '100vh'
+          document.documentElement.style.height = '100vh'
+          document.body.style.margin = '0'
+          document.body.style.padding = '0'
+          document.documentElement.style.margin = '0'
+          document.documentElement.style.padding = '0'
+          
+          // Hide Safari address bar with scroll trick
+          window.scrollTo(0, 1)
+          setTimeout(() => window.scrollTo(0, 0), 50)
+          
+          // Force viewport to cover entire screen including notch area
+          const viewport = document.querySelector('meta[name=viewport]')
+          if (viewport) {
+            viewport.setAttribute('content', 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, minimal-ui, status-bar-height=0')
+          }
+          
+          // Add CSS to ensure full coverage
+          const style = document.createElement('style')
+          style.textContent = `
+            body, html {
+              height: 100vh !important;
+              width: 100vw !important;
+              margin: 0 !important;
+              padding: 0 !important;
+              overflow: hidden !important;
+            }
+            body {
+              -webkit-overflow-scrolling: touch !important;
+              position: fixed !important;
+              top: 0 !important;
+              left: 0 !important;
+            }
+          `
+          document.head.appendChild(style)
+          
+          // Store style element for cleanup
+          el.setAttribute('data-fullscreen-style', style.id = 'ios-fullscreen-style')
+          
+          checkRotateHint()
+          return
+          
+        } catch (error) {
+          console.log('iOS canvas fullscreen failed:', error)
+        }
+      }
+      
+      // Normal fullscreen untuk non-iOS devices
       if (!document.fullscreenElement) {
         await el.requestFullscreen()
       }
       setIsFullscreen(true)
+      
       // Try to lock orientation on supported browsers (mostly Android Chrome)
       const orientationLike = (screen as unknown as { orientation?: ScreenOrientationLike }).orientation
       if (orientationLike && typeof orientationLike.lock === "function") {
@@ -342,16 +444,52 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
       } else {
         checkRotateHint()
       }
-    } catch {
-      // If fullscreen fails, show hint on mobile
+    } catch (error) {
+      console.log('Fullscreen failed, falling back to pseudo-fullscreen:', error)
+      // Fallback to pseudo-fullscreen even on non-iOS if real fullscreen fails
+      setIsFullscreen(true)
       checkRotateHint()
     }
-  }, [checkRotateHint])
+  }, [checkRotateHint, isIOS])
 
   const exitFullscreenAndUnlock = useCallback(async () => {
     console.log('Exit fullscreen called, current fullscreen element:', document.fullscreenElement)
+    
+    if (isIOS) {
+      console.log('🍎 iOS detected - exiting fullscreen')
+      
+      // Restore iOS styles
+      document.body.style.overflow = ''
+      document.documentElement.style.overflow = ''
+      document.body.style.height = ''
+      document.documentElement.style.height = ''
+      document.body.style.margin = ''
+      document.body.style.padding = ''
+      document.documentElement.style.margin = ''
+      document.documentElement.style.padding = ''
+      document.body.style.position = ''
+      document.body.style.top = ''
+      document.body.style.left = ''
+      
+      // Remove custom fullscreen styles
+      const customStyle = document.getElementById('ios-fullscreen-style')
+      if (customStyle) {
+        customStyle.remove()
+      }
+      
+      // Restore viewport
+      const viewport = document.querySelector('meta[name=viewport]')
+      if (viewport) {
+        viewport.setAttribute('content', 'width=device-width, initial-scale=1.0, user-scalable=yes')
+      }
+      
+      setIsFullscreen(false)
+      setShowRotateHint(false)
+      return
+    }
+    
     try {
-      // Force exit fullscreen regardless of current state
+      // Force exit fullscreen untuk non-iOS devices
       if (document.fullscreenElement) {
         console.log('Attempting to exit fullscreen...')
         await document.exitFullscreen()
@@ -386,7 +524,7 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
         window.dispatchEvent(new Event('resize'))
       }, 100)
     }
-  }, [])
+  }, [isIOS])
 
   const toggleFullscreen = useCallback(() => {
     if (isFullscreen) {
@@ -398,6 +536,8 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
 
   // Listen for fullscreenchange to keep state in sync
   useEffect(() => {
+    const canvas = canvasRef.current
+    
     const handler = () => {
       const fs = !!document.fullscreenElement
       setIsFullscreen(fs)
@@ -419,15 +559,45 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
         checkRotateHint()
       }
     }
+    
+    // Handle webkit fullscreen events for iOS canvas
+    const webkitEnterHandler = () => {
+      console.log('🍎 iOS canvas entered fullscreen')
+      setIsFullscreen(true)
+      const detectedMode = detectDeviceType()
+      console.log(`Auto-detected device type: ${detectedMode}`)
+      setDisplayMode(detectedMode)
+      setAutoDetected(true)
+      checkRotateHint()
+    }
+    
+    const webkitExitHandler = () => {
+      console.log('🍎 iOS canvas exited fullscreen')
+      setIsFullscreen(false)
+      setShowRotateHint(false)
+    }
+    
+    // Add normal fullscreen listeners
     document.addEventListener("fullscreenchange", handler)
-    return () => document.removeEventListener("fullscreenchange", handler)
-  }, [checkRotateHint, detectDeviceType])
+    
+    // Add iOS canvas fullscreen listeners
+    if (canvas && isIOS) {
+      canvas.addEventListener("webkitfullscreenchange", handler)
+      canvas.addEventListener("webkitbeginfullscreen", webkitEnterHandler)
+      canvas.addEventListener("webkitendfullscreen", webkitExitHandler)
+    }
+    
+    return () => {
+      document.removeEventListener("fullscreenchange", handler)
+      if (canvas && isIOS) {
+        canvas.removeEventListener("webkitfullscreenchange", handler)
+        canvas.removeEventListener("webkitbeginfullscreen", webkitEnterHandler)
+        canvas.removeEventListener("webkitendfullscreen", webkitExitHandler)
+      }
+    }
+  }, [checkRotateHint, detectDeviceType, isIOS])
 
-  // iOS detection for better handling
-  const isIOS = useMemo(() => {
-    return /iPad|iPhone|iPod/.test(navigator.userAgent) || 
-           (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
-  }, [])
+  // Auto-detect device type on component mount
   useEffect(() => {
     const detectedMode = detectDeviceType()
     console.log(`Initial device detection: ${detectedMode}`)
@@ -1475,7 +1645,35 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
   }
 
   return (
-    <div ref={wrapperRef} className={"relative " + (isFullscreen ? "fixed inset-0 z-50 bg-background overflow-hidden" : "")}>
+    <div 
+      ref={wrapperRef} 
+      className={
+        "relative " + 
+        (isFullscreen 
+          ? isIOS 
+            ? "fixed inset-0 z-50 bg-background overflow-hidden w-screen h-screen" // iOS aggressive fullscreen
+            : "fixed inset-0 z-50 bg-background overflow-hidden h-screen w-screen" // Normal fullscreen
+          : ""
+        )
+      }
+      style={isFullscreen ? {
+        // Aggressive fullscreen styles for complete screen takeover
+        height: isIOS ? '100vh' : '100vh',
+        width: isIOS ? '100vw' : '100vw',
+        position: 'fixed' as const,
+        top: 0,
+        left: 0,
+        zIndex: 9999,
+        backgroundColor: 'var(--background)',
+        ...(isIOS && {
+          // Additional iOS-specific styles to hide Safari UI
+          minHeight: '100vh',
+          minWidth: '100vw',
+          overflow: 'hidden',
+          WebkitOverflowScrolling: 'touch'
+        })
+      } : undefined}
+    >
       <div className={isFullscreen ? "h-full w-full flex flex-col" : "mx-auto max-w-6xl rounded-lg border bg-background shadow-lg overflow-hidden p-2"}>
         <div className={`relative overflow-hidden isolate ${isFullscreen ? "flex-1 bg-background w-full" : "rounded-md bg-muted/30"}`}>
           <canvas ref={canvasRef} className={`block ${isFullscreen ? "h-full w-full bg-background" : "w-full rounded-md bg-background border-2 border-border/20"}`} />
@@ -1656,7 +1854,10 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
                 <div className="text-xl text-muted-foreground mb-4">Get ready...</div>
                 {isFullscreen && (
                   <div className="text-sm text-muted-foreground/80">
-                    💡 Tip: Gunakan tombol &quot;Display&quot; di pojok kanan atas untuk mengatur kontrol
+                    {isIOS 
+                      ? "🍎 iOS Mode: True fullscreen enabled - like YouTube!" 
+                      : "💡 Tip: Gunakan tombol \"Display\" di pojok kanan atas untuk mengatur kontrol"
+                    }
                   </div>
                 )}
               </div>
