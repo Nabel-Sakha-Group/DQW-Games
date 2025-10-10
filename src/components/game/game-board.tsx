@@ -3,7 +3,7 @@
 // Core canvas game: Pick & Place with conveyor and targets.
 // Controls: Arrow/WASD + Space on desktop; on-screen buttons on mobile.
 
-import { useEffect, useRef, useState, useCallback } from "react"
+import { useEffect, useRef, useState, useCallback, useMemo } from "react"
 import { HUD } from "./hud"
 import MobileControls from "./mobile-controls"
 import DesktopControls from "./desktop-controls"
@@ -139,6 +139,45 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
   const [perusahaan, setPerusahaan] = useState("")
   const [saving, setSaving] = useState(false)
 
+  // Protection flag to prevent accidental game resets during input interaction
+  const [isInputting, setIsInputting] = useState(false)
+
+  // Debug logging for critical state changes (can be removed after testing)
+  useEffect(() => {
+    console.log('🎮 Game state:', { gameOver, name: name.length > 0 ? `"${name}"` : 'empty', perusahaan: perusahaan.length > 0 ? `"${perusahaan}"` : 'empty', saving, isInputting })
+    
+    // Log stack trace when gameOver changes to false unexpectedly
+    if (!gameOver && name.length > 0) {
+      console.warn('⚠️ GameOver set to false while name was filled! This might be the bug.')
+      console.trace('Stack trace:')
+    }
+  }, [gameOver, name, perusahaan, saving, isInputting])
+
+  // Global event monitoring for debugging mobile input issue
+  useEffect(() => {
+    const events = [
+      'click', 'touchstart', 'touchend', 'touchmove', 'touchcancel',
+      'focus', 'blur', 'keydown', 'keyup', 'input', 'change',
+      'fullscreenchange', 'orientationchange', 'resize', 'scroll'
+    ]
+    
+    const handlers: Array<() => void> = []
+    
+    events.forEach(eventType => {
+      const handler = (e: Event) => {
+        if (gameOver && isInputting) {
+          console.log(`🔍 Event during input: ${eventType}`, e.target)
+        }
+      }
+      window.addEventListener(eventType, handler, true) // Use capture phase
+      handlers.push(() => window.removeEventListener(eventType, handler, true))
+    })
+    
+    return () => {
+      handlers.forEach(cleanup => cleanup())
+    }
+  }, [gameOver, isInputting])
+
   // Show rotate hint on mobile when in fullscreen but portrait
   const checkRotateHint = useCallback(() => {
     if (!isMobile) return setShowRotateHint(false)
@@ -228,12 +267,27 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
 
   // Define callback functions first
   const toggleVacuum = useCallback(() => {
+    console.log('🔧 Vacuum button pressed!')
     const lifter = lifterRef.current
     const g = gameRef.current
-    if (g.paused || g.timeLeft <= 0) return
+    
+    console.log('🔧 Game state:', { paused: g.paused, timeLeft: g.timeLeft, started, gameOver })
+    
+    if (g.paused || g.timeLeft <= 0) {
+      console.log('🔧 Vacuum blocked - game paused or time over')
+      return
+    }
+    
+    // Also check if game hasn't started yet
+    if (!started) {
+      console.log('🔧 Vacuum blocked - game not started')
+      return
+    }
 
     lifter.vacuum = !lifter.vacuum
     setVacuumState(lifter.vacuum)
+    
+    console.log('🔧 Vacuum toggled to:', lifter.vacuum)
 
     if (!lifter.vacuum && lifter.holding) {
       const dropped = lifter.holding
@@ -258,7 +312,7 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
       }
       dropped.landingEvaluated = false
     }
-  }, [])
+  }, [started, gameOver])
 
   // Pause removed entirely per requirement
 
@@ -312,11 +366,8 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
       console.log('Setting fullscreen state to false')
       setIsFullscreen(false)
       
-      // Clear any game over state to allow interaction
-      if (gameOver) {
-        console.log('Clearing game over state')
-        setGameOver(false)
-      }
+      // DON'T clear game over state automatically - this was causing the mobile input bug!
+      // Only clear game over state when explicitly restarting game, not when exiting fullscreen
       
       // Unlock orientation if previously locked
       try {
@@ -335,7 +386,7 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
         window.dispatchEvent(new Event('resize'))
       }, 100)
     }
-  }, [gameOver])
+  }, [])
 
   const toggleFullscreen = useCallback(() => {
     if (isFullscreen) {
@@ -372,7 +423,11 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
     return () => document.removeEventListener("fullscreenchange", handler)
   }, [checkRotateHint, detectDeviceType])
 
-  // Auto-detect device type on component mount
+  // iOS detection for better handling
+  const isIOS = useMemo(() => {
+    return /iPad|iPhone|iPod/.test(navigator.userAgent) || 
+           (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+  }, [])
   useEffect(() => {
     const detectedMode = detectDeviceType()
     console.log(`Initial device detection: ${detectedMode}`)
@@ -405,6 +460,7 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
           setVacuumState(false)
           setHud({ score: 0, timeLeft: GAME_SECONDS, paused: false, holding: null })
           setStarted(true)
+          console.log('🎮 startGame - clearing game over state')
           setGameOver(false)
           gameOverFiredRef.current = false
           // spawn a couple items immediately so conveyor isn't empty
@@ -422,6 +478,8 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
   
   // Restart game function
   const restartGame = useCallback(() => {
+    console.log('🔄 restartGame called - clearing game over state')
+    console.trace('restartGame stack trace:')
     setGameOver(false)
     setStarted(false)
     setCountdown(null)
@@ -472,6 +530,7 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
     }
     
     // Reset all states
+    console.log('💾 saveScore - resetting game state after save')
     setGameOver(false)
     setName("")
     setPerusahaan("")
@@ -677,6 +736,11 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      // Skip keyboard handling completely during game over
+      if (gameOver) {
+        return
+      }
+      
       const t = e.target as HTMLElement | null
       const isEditable = !!t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable === true)
       if (isEditable) {
@@ -703,6 +767,11 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
   }
     }
     const onKeyUp = (e: KeyboardEvent) => {
+      // Skip keyboard handling completely during game over
+      if (gameOver) {
+        return
+      }
+      
       const t = e.target as HTMLElement | null
       const isEditable = !!t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable === true)
       if (isEditable) {
@@ -729,7 +798,7 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
       window.removeEventListener("keydown", onKeyDown)
       window.removeEventListener("keyup", onKeyUp)
     }
-  }, [toggleVacuum])
+  }, [toggleVacuum, gameOver])
 
   // Game loop
   useEffect(() => {
@@ -1350,7 +1419,10 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
       setKeyStates(prev => ({ ...prev, [dir]: pressed }))
     }
   }
-  const handleVacuum = () => toggleVacuum()
+  const handleVacuum = () => {
+    console.log('🎮 Mobile vacuum button pressed!')
+    toggleVacuum()
+  }
 
   // Helper to compute head geometry in world space (anchor, angle, bottom point)
   function getHeadGeo() {
@@ -1419,42 +1491,124 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
             </div>
           )}
           
-          {/* Game Over Screen with Input Form */}
+          {/* Game Over Screen with Input Form - Responsive for all screen sizes */}
           {gameOver && (
-            <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/90 backdrop-blur-sm pointer-events-auto p-4">
-              <div className="text-center max-w-md w-full">
-                <div className="text-6xl font-bold text-red-500 mb-4">GAME OVER</div>
-                <div className="text-2xl font-semibold mb-2">Final Score</div>
-                <div className="text-4xl font-bold text-primary mb-6">{finalScore}</div>
+            <div 
+              className={`absolute inset-0 z-50 flex items-center justify-center bg-background/90 backdrop-blur-sm pointer-events-auto p-4 ${
+                // Add extra padding on small screens for better spacing, especially on iOS
+                isMobile || isIOS ? 'py-6' : 'py-4'
+              } overflow-y-auto`}
+              style={{
+                // Ensure scrolling on very small screens
+                minHeight: '100%'
+              }}
+            >
+              <div className={`text-center w-full mx-auto my-auto ${
+                // Adjust max width based on screen size and fullscreen status
+                // On iOS or when not fullscreen, use smaller containers
+                (isFullscreen && !isIOS) ? 'max-w-sm sm:max-w-md' : 'max-w-xs sm:max-w-sm md:max-w-md'
+              }`}>
+                <div className={`font-bold text-red-500 mb-3 sm:mb-4 ${
+                  // Responsive text sizing based on screen and fullscreen status
+                  // Smaller text on iOS or non-fullscreen
+                  (isFullscreen && !isIOS)
+                    ? 'text-4xl sm:text-5xl md:text-6xl' 
+                    : 'text-3xl sm:text-4xl md:text-5xl'
+                }`}>GAME OVER</div>
+                <div className={`font-semibold mb-2 ${
+                  (isFullscreen && !isIOS)
+                    ? 'text-lg sm:text-xl md:text-2xl' 
+                    : 'text-base sm:text-lg md:text-xl'
+                }`}>Final Score</div>
+                <div className={`font-bold text-primary mb-4 sm:mb-6 ${
+                  (isFullscreen && !isIOS)
+                    ? 'text-3xl sm:text-4xl' 
+                    : 'text-2xl sm:text-3xl'
+                }`}>{finalScore}</div>
                 
-                {/* Input Form */}
-                <div className="space-y-4 mb-6">
+                {/* Input Form - Responsive */}
+                <div className="space-y-3 sm:space-y-4 mb-4 sm:mb-6 relative z-10">
                   <div>
                     <label className="block text-sm font-medium mb-1 text-left">Nama</label>
                     <input
+                      ref={(el) => {
+                        if (el && gameOver) {
+                          console.log('📝 Name input mounted and ready')
+                        }
+                      }}
                       value={name}
-                      onChange={(e) => setName(e.target.value)}
+                      onChange={(e) => {
+                        console.log('📝 Name input onChange:', e.target.value)
+                        setName(e.target.value)
+                      }}
+                      onFocus={() => {
+                        console.log('📝 Name input focused - input now active!')
+                        setIsInputting(true)
+                      }}
+                      onBlur={() => {
+                        console.log('📝 Name input blurred')
+                        setIsInputting(false)
+                      }}
                       placeholder="Nama kamu"
-                      className="w-full rounded border bg-transparent px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className={`w-full rounded border px-3 py-2 sm:py-3 text-sm sm:text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                        // Better background for iOS and better contrast
+                        isIOS ? 'bg-white text-black' : 'bg-background'
+                      }`}
                       autoFocus
                       disabled={saving}
+                      type="text"
+                      autoComplete="off"
+                      autoCorrect="off"
+                      autoCapitalize="off"
+                      spellCheck="false"
+                      tabIndex={0}
+                      style={{ 
+                        WebkitTapHighlightColor: 'transparent',
+                        touchAction: 'manipulation',
+                        pointerEvents: 'auto'
+                      }}
                     />
                   </div>
                   <div>
                     <label className="block text-sm font-medium mb-1 text-left">Perusahaan</label>
                     <input
                       value={perusahaan}
-                      onChange={(e) => setPerusahaan(e.target.value)}
+                      onChange={(e) => {
+                        console.log('📝 Company input onChange:', e.target.value)
+                        setPerusahaan(e.target.value)
+                      }}
+                      onFocus={() => {
+                        console.log('📝 Company input focused')
+                        setIsInputting(true)
+                      }}
+                      onBlur={() => {
+                        console.log('📝 Company input blurred')
+                        setIsInputting(false)
+                      }}
                       placeholder="Perusahaan (opsional)"
-                      className="w-full rounded border bg-transparent px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className={`w-full rounded border px-3 py-2 sm:py-3 text-sm sm:text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                        // Better background for iOS and better contrast
+                        isIOS ? 'bg-white text-black' : 'bg-background'
+                      }`}
                       disabled={saving}
+                      type="text"
+                      autoComplete="off"
+                      autoCorrect="off"
+                      autoCapitalize="off"
+                      spellCheck="false"
+                      tabIndex={0}
+                      style={{ 
+                        WebkitTapHighlightColor: 'transparent',
+                        touchAction: 'manipulation',
+                        pointerEvents: 'auto'
+                      }}
                     />
                   </div>
                 </div>
 
-                <div className="space-y-3">
+                <div className="space-y-2 sm:space-y-3">
                   <button
-                    className="w-full rounded-md bg-blue-600 text-white px-6 py-3 text-base font-semibold shadow hover:bg-blue-700 focus:outline-none active:bg-blue-800 touch-manipulation disabled:opacity-50"
+                    className="w-full rounded-md bg-blue-600 text-white px-4 sm:px-6 py-2 sm:py-3 text-sm sm:text-base font-semibold shadow hover:bg-blue-700 focus:outline-none active:bg-blue-800 touch-manipulation disabled:opacity-50"
                     onClick={(e) => {
                       e.preventDefault()
                       e.stopPropagation()
@@ -1468,10 +1622,10 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
                     disabled={saving}
                     style={{ WebkitTapHighlightColor: 'transparent' }}
                   >
-                    {saving ? "� Menyimpan..." : "💾 Simpan & Keluar"}
+                    {saving ? "⏳ Menyimpan..." : "💾 Simpan & Keluar"}
                   </button>
                   <button
-                    className="w-full rounded-md bg-green-600 text-white px-6 py-3 text-base font-semibold shadow hover:bg-green-700 focus:outline-none active:bg-green-800 touch-manipulation disabled:opacity-50"
+                    className="w-full rounded-md bg-green-600 text-white px-4 sm:px-6 py-2 sm:py-3 text-sm sm:text-base font-semibold shadow hover:bg-green-700 focus:outline-none active:bg-green-800 touch-manipulation disabled:opacity-50"
                     onClick={(e) => {
                       e.preventDefault()
                       e.stopPropagation()

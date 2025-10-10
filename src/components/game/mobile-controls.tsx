@@ -137,12 +137,31 @@ export default function MobileControls({ onDirChange, onVacuum, overlay, vacuumA
       </div>
       <div className="flex flex-1 justify-end">
         <button 
-          className={`relative h-20 w-20 rounded-full border-3 font-semibold text-white shadow-xl transition-all duration-300 focus:outline-none focus:ring-4 active:scale-90 ${
+          className={`relative h-20 w-20 rounded-full border-3 font-semibold text-white shadow-xl transition-all duration-300 focus:outline-none focus:ring-4 active:scale-90 touch-manipulation ${
             vacuumActive 
               ? "bg-gradient-to-br from-emerald-500 to-emerald-700 hover:from-emerald-600 hover:to-emerald-800 border-emerald-400 shadow-emerald-500/40 ring-emerald-300" 
               : "bg-gradient-to-br from-blue-500 to-blue-700 hover:from-blue-600 hover:to-blue-800 border-blue-400 shadow-blue-500/40 ring-blue-300"
           }`}
-          onClick={onVacuum}
+          onClick={(e) => {
+            e.preventDefault()
+            e.stopPropagation()
+            onVacuum()
+          }}
+          onTouchStart={(e) => {
+            e.preventDefault()
+            e.stopPropagation()
+          }}
+          onTouchEnd={(e) => {
+            e.preventDefault()
+            e.stopPropagation()
+            onVacuum()
+          }}
+          style={{ 
+            WebkitTapHighlightColor: 'transparent',
+            touchAction: 'manipulation',
+            userSelect: 'none',
+            WebkitUserSelect: 'none'
+          }}
         >
           {/* Background glow effect */}
           <div className={`absolute inset-0 rounded-full blur-md opacity-30 ${
