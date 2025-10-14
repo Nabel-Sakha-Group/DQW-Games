@@ -664,8 +664,15 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
 
   // Save score function
   const saveScore = useCallback(async () => {
-    const player = name.trim() || "Player"
-    const company = perusahaan.trim() || null
+    const player = name.trim()
+    const company = perusahaan.trim()
+    
+    // Validation: both name and company are required
+    if (!player || !company) {
+      alert("Nama dan Perusahaan wajib diisi!")
+      return
+    }
+    
     setSaving(true)
     
     try {
@@ -1727,7 +1734,9 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
                 {/* Input Form - Responsive */}
                 <div className="space-y-3 sm:space-y-4 mb-4 sm:mb-6 relative z-10">
                   <div>
-                    <label className="block text-sm font-medium mb-1 text-left">Nama</label>
+                    <label className="block text-sm font-medium mb-1 text-left">
+                      Nama <span className="text-red-500">*</span>
+                    </label>
                     <input
                       ref={(el) => {
                         if (el && gameOver) {
@@ -1768,7 +1777,9 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium mb-1 text-left">Perusahaan</label>
+                    <label className="block text-sm font-medium mb-1 text-left">
+                      Perusahaan <span className="text-red-500">*</span>
+                    </label>
                     <input
                       value={perusahaan}
                       onChange={(e) => {
@@ -1783,7 +1794,7 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
                         console.log('📝 Company input blurred')
                         setIsInputting(false)
                       }}
-                      placeholder="Perusahaan (opsional)"
+                      placeholder="Nama perusahaan"
                       className={`w-full rounded border px-3 py-2 sm:py-3 text-sm sm:text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
                         // Better background for iOS and better contrast
                         isIOS ? 'bg-white text-black' : 'bg-background'
@@ -1804,6 +1815,10 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
                   </div>
                 </div>
 
+                <div className="text-xs text-muted-foreground mb-4 text-center">
+                  <span className="text-red-500">*</span> Field wajib diisi
+                </div>
+
                 <div className="space-y-2 sm:space-y-3">
                   <button
                     className="w-full rounded-md bg-blue-600 text-white px-4 sm:px-6 py-2 sm:py-3 text-sm sm:text-base font-semibold shadow hover:bg-blue-700 focus:outline-none active:bg-blue-800 touch-manipulation disabled:opacity-50"
@@ -1815,9 +1830,9 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
                     onTouchEnd={(e) => {
                       e.preventDefault()
                       e.stopPropagation()
-                      if (!saving) saveScore()
+                      if (!saving && name.trim() && perusahaan.trim()) saveScore()
                     }}
-                    disabled={saving}
+                    disabled={saving || !name.trim() || !perusahaan.trim()}
                     style={{ WebkitTapHighlightColor: 'transparent' }}
                   >
                     {saving ? "⏳ Menyimpan..." : "💾 Simpan & Keluar"}

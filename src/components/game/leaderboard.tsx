@@ -4,7 +4,7 @@ import React from "react"
 
 export type LeaderboardEntry = {
   name: string
-  perusahaan?: string
+  perusahaan: string
   score: number
   created_at?: string
 }
@@ -30,9 +30,7 @@ export function Leaderboard({ entries }: { entries: LeaderboardEntry[] }) {
                   </span>
                   <div className="min-w-0 flex-1">
                     <div className="font-medium text-sm truncate">{entry.name}</div>
-                    {entry.perusahaan && (
-                      <div className="text-xs text-muted-foreground truncate">{entry.perusahaan}</div>
-                    )}
+                    <div className="text-xs text-muted-foreground truncate">{entry.perusahaan}</div>
                   </div>
                 </div>
                 <div className="font-semibold text-primary">{entry.score}</div>
