@@ -15,7 +15,9 @@ function Joystick({ onVector }: { onVector: (dx: number, dy: number) => void }) 
   const [dragging, setDragging] = useState(false)
   const [pos, setPos] = useState<{x:number;y:number}>({x:0,y:0})
   const [active, setActive] = useState(false)
-  const radius = 42 // travel radius
+  // Deteksi iOS untuk ukuran yang lebih besar
+  const isIOS = typeof navigator !== 'undefined' && /iPad|iPhone|iPod/.test(navigator.userAgent)
+  const radius = isIOS ? 50 : 42 // travel radius lebih besar untuk iOS
   const dead = 4  // Deadzone kecil untuk analog
   const vecRef = useRef<{x:number;y:number}>({x:0,y:0})
   const rafRef = useRef<number | null>(null)
@@ -42,7 +44,7 @@ function Joystick({ onVector }: { onVector: (dx: number, dy: number) => void }) 
     vecRef.current = { x: nx, y: ny }
     onVector(nx, ny)
     setActive(mag > 0)
-  }, [onVector])
+  }, [onVector, radius])
 
   // Cleanup RAF on unmount
   useEffect(() => {
@@ -59,7 +61,9 @@ function Joystick({ onVector }: { onVector: (dx: number, dy: number) => void }) 
   return (
     <div
       ref={areaRef}
-      className="relative h-28 w-28 select-none touch-none rounded-full bg-gradient-to-b from-muted/70 to-muted/40 backdrop-blur-sm border border-border shadow-inner"
+      className={`relative select-none touch-none rounded-full bg-gradient-to-b from-muted/70 to-muted/40 backdrop-blur-sm border border-border shadow-inner ${
+        isIOS ? 'h-32 w-32' : 'h-28 w-28'
+      }`}
       style={{ touchAction: 'none' as React.CSSProperties['touchAction'], WebkitTouchCallout: 'none', WebkitUserSelect: 'none' }}
       onContextMenu={(e) => e.preventDefault()}
       onPointerDown={(e) => {
@@ -126,18 +130,23 @@ export default function MobileControls({ onDirChange, onVacuum, overlay, vacuumA
     onDirChange('analog', { x, y })
   }, [onDirChange])
 
+  // Deteksi iOS untuk styling khusus
+  const isIOS = typeof navigator !== 'undefined' && /iPad|iPhone|iPod/.test(navigator.userAgent)
+
   return (
-    <div className={`pointer-events-auto flex w-full items-center justify-between gap-4 ${
+    <div className={`pointer-events-auto flex w-full items-center justify-between ${
       overlay 
-        ? "max-w-none mx-0 px-4 pb-2" 
-        : "max-w-lg mx-auto mt-2 px-2"
+        ? `max-w-none mx-0 px-4 pb-2 ${isIOS ? 'gap-6' : 'gap-4'}` 
+        : `max-w-lg mx-auto mt-2 px-2 ${isIOS ? 'gap-6' : 'gap-4'}`
     }`}>
       <div className="flex items-center gap-3">
         <Joystick onVector={(dx, dy) => applyVector(dx, dy)} />
       </div>
       <div className="flex flex-1 justify-end">
         <button 
-          className={`relative h-20 w-20 rounded-full border-3 font-semibold text-white shadow-xl transition-all duration-300 focus:outline-none focus:ring-4 active:scale-90 touch-manipulation ${
+          className={`relative rounded-full border-3 font-semibold text-white shadow-xl transition-all duration-300 focus:outline-none focus:ring-4 active:scale-90 touch-manipulation ${
+            isIOS ? 'h-24 w-24' : 'h-20 w-20'
+          } ${
             vacuumActive 
               ? "bg-gradient-to-br from-emerald-500 to-emerald-700 hover:from-emerald-600 hover:to-emerald-800 border-emerald-400 shadow-emerald-500/40 ring-emerald-300" 
               : "bg-gradient-to-br from-blue-500 to-blue-700 hover:from-blue-600 hover:to-blue-800 border-blue-400 shadow-blue-500/40 ring-blue-300"
@@ -169,12 +178,12 @@ export default function MobileControls({ onDirChange, onVacuum, overlay, vacuumA
           }`}></div>
           
           {/* Image container with better sizing */}
-          <div className="absolute inset-0 z-10 flex items-center justify-center p-2">
+          <div className={`absolute inset-0 z-10 flex items-center justify-center ${isIOS ? 'p-3' : 'p-2'}`}>
             <Image 
               src="/images/logo schmalz.png" 
               alt="Vacuum" 
-              width={48}
-              height={24}
+              width={isIOS ? 56 : 48}
+              height={isIOS ? 28 : 24}
               className="object-contain filter brightness-0 invert"
             />
           </div>

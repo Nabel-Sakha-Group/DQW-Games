@@ -187,9 +187,20 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
   // Show rotate hint on mobile when in fullscreen but portrait
   const checkRotateHint = useCallback(() => {
     if (!isMobile) return setShowRotateHint(false)
-    const isPortrait = window.matchMedia("(orientation: portrait)").matches
-    setShowRotateHint(isPortrait)
-  }, [isMobile])
+    // For iOS, be more lenient with rotation hints - don't show unless very small screen
+    if (isIOS) {
+      const isPortrait = window.matchMedia("(orientation: portrait)").matches
+      const screenHeight = window.screen.height
+      const screenWidth = window.screen.width
+      // Only show hint if portrait and really small screen (phone-sized)
+      const isSmallScreen = Math.min(screenHeight, screenWidth) < 700
+      setShowRotateHint(isPortrait && isSmallScreen)
+    } else {
+      // For non-iOS, use original logic
+      const isPortrait = window.matchMedia("(orientation: portrait)").matches
+      setShowRotateHint(isPortrait)
+    }
+  }, [isMobile, isIOS])
 
   // HUD state (decoupled from internal refs to avoid excessive re-render)
   const [hud, setHud] = useState<GameState & { holding?: string | null }>(
@@ -327,15 +338,23 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
   
 
   // Fullscreen helpers dengan true iOS fullscreen API
-  const requestFullscreenAndLock = useCallback(async () => {
+  const requestFullscreenAndLock = useCallback(async (forceIOS = false) => {
     try {
       const el = wrapperRef.current
       const canvas = canvasRef.current
       if (!el || !canvas) return
       
-      // iOS Safari - gunakan canvas requestFullscreen dengan webkit prefixes
-      if (isIOS) {
-        console.log('🍎 iOS detected - using canvas webkit fullscreen')
+      // iOS Safari - skip fullscreen unless explicitly forced
+      if (isIOS && !forceIOS) {
+        console.log('🍎 iOS detected - skipping fullscreen (not forced)')
+        // Just check for rotate hint without entering fullscreen
+        checkRotateHint()
+        return
+      }
+      
+      // iOS Safari with forced fullscreen - gunakan canvas requestFullscreen dengan webkit prefixes
+      if (isIOS && forceIOS) {
+        console.log('🍎 iOS detected - forcing canvas webkit fullscreen')
         
         try {
           // Try multiple iOS Safari fullscreen methods
@@ -431,17 +450,22 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
       }
       setIsFullscreen(true)
       
-      // Try to lock orientation on supported browsers (mostly Android Chrome)
-      const orientationLike = (screen as unknown as { orientation?: ScreenOrientationLike }).orientation
-      if (orientationLike && typeof orientationLike.lock === "function") {
-        try {
-          await orientationLike.lock("landscape")
-          setShowRotateHint(false)
-        } catch {
-          // If we couldn't lock, still show hint if portrait on mobile
+      // Try to lock orientation on supported browsers (mostly Android Chrome) - skip iOS
+      if (!isIOS) {
+        const orientationLike = (screen as unknown as { orientation?: ScreenOrientationLike }).orientation
+        if (orientationLike && typeof orientationLike.lock === "function") {
+          try {
+            await orientationLike.lock("landscape")
+            setShowRotateHint(false)
+          } catch {
+            // If we couldn't lock, still show hint if portrait on mobile
+            checkRotateHint()
+          }
+        } else {
           checkRotateHint()
         }
       } else {
+        // For iOS, don't force orientation but still check for hint (optional)
         checkRotateHint()
       }
     } catch (error) {
@@ -530,7 +554,8 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
     if (isFullscreen) {
       exitFullscreenAndUnlock()
     } else {
-      requestFullscreenAndLock()
+      // For manual toggle, allow iOS fullscreen (force = true)
+      requestFullscreenAndLock(true)
     }
   }, [isFullscreen, exitFullscreenAndUnlock, requestFullscreenAndLock])
 
@@ -615,7 +640,10 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
     
     // Auto fullscreen saat game start - reset auto-detect untuk re-detect device
     setAutoDetected(true) 
-    requestFullscreenAndLock()
+    // Skip auto fullscreen for iOS, let user decide
+    if (!isIOS) {
+      requestFullscreenAndLock()
+    }
     
     const countdownInterval = setInterval(() => {
       setCountdown(prev => {
@@ -644,7 +672,7 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
         return prev - 1
       })
     }, 1000)
-  }, [spawnItem, requestFullscreenAndLock])
+  }, [spawnItem, requestFullscreenAndLock, isIOS])
   
   // Restart game function
   const restartGame = useCallback(() => {
@@ -750,44 +778,63 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
   // Setup targets based on size (with layout profiles)
   const setupLevel = useCallback(() => {
     const { w, h } = scaledRef.current
-    // Layout profile per mode
-    const targetScale = isFullscreen ? 1.15 : 1.0
-    const lifterScale = isFullscreen ? 1.1 : 1.0
-    beltFracRef.current = isFullscreen ? 0.06 : 0.05
-    itemScaleRef.current = isFullscreen ? 1.1 : 1.0
+    // Layout profile per mode - scaling yang lebih proporsional untuk iOS canvas kecil
+    const targetScale = isFullscreen ? 1.15 : (isIOS && !isFullscreen ? 1.15 : (isIOS ? 1.35 : 1.0))
+    const lifterScale = isFullscreen ? 1.1 : (isIOS && !isFullscreen ? 1.2 : (isIOS ? 1.3 : 1.0))
+    beltFracRef.current = isFullscreen ? 0.06 : (isIOS && !isFullscreen ? 0.055 : (isIOS ? 0.065 : 0.05))
+    itemScaleRef.current = isFullscreen ? 1.1 : (isIOS && !isFullscreen ? 1.0 : (isIOS ? 1.3 : 1.0))
 
-    conveyorRef.current.y = Math.floor(h * 0.72)
+    conveyorRef.current.y = Math.floor(h * (isIOS && !isFullscreen ? 0.68 : (isIOS ? 0.70 : 0.72)))
 
-    // On small screens, allow smaller minima so assets don't look oversized
+    // Penyesuaian khusus untuk iOS - target boxes lebih kecil di canvas kecil untuk proporsi yang pas
     const smallScreen = w < 500
-    const targetW = Math.max(smallScreen ? 72 : 100, Math.floor(w * 0.12 * targetScale))
-    const targetH = Math.max(smallScreen ? 40 : 50, Math.floor(h * 0.09 * targetScale))
-    const baseY = Math.floor(h * (smallScreen ? 0.28 : (isFullscreen ? 0.34 : 0.32)))
+    const isIOSSmall = isIOS && w < 430 // iPhone 13 width is ~390px
+    
+    // Scaling yang berbeda untuk fullscreen vs non-fullscreen
+    const canvasScale = isFullscreen ? 1.0 : (isIOS ? 0.7 : 1.0)
+    
+    const targetW = Math.max(
+      isIOSSmall && !isFullscreen ? 60 : (isIOSSmall ? 80 : (smallScreen ? 70 : 100)), 
+      Math.floor(w * (isIOS && !isFullscreen ? 0.09 : (isIOS ? 0.12 : 0.12)) * targetScale * canvasScale)
+    )
+    const targetH = Math.max(
+      isIOSSmall && !isFullscreen ? 32 : (isIOSSmall ? 48 : (smallScreen ? 40 : 50)), 
+      Math.floor(h * (isIOS && !isFullscreen ? 0.065 : (isIOS ? 0.085 : 0.09)) * targetScale * canvasScale)
+    )
+    const baseY = Math.floor(h * (isIOSSmall && !isFullscreen ? 0.30 : (isIOSSmall ? 0.32 : (smallScreen ? 0.34 : (isFullscreen ? 0.38 : 0.36)))))
 
+    // Adjust target spacing untuk canvas kecil iOS
+    const targetSpacing = isIOS && !isFullscreen ? 
+      [0.20, 0.42, 0.62, 0.82] : // Lebih rapat untuk canvas kecil
+      [0.22, 0.46, 0.65, 0.84]   // Spacing normal
+      
     targetsRef.current = [
       {
         type: "bottle",
         label: "Bottle Crate",
-        x: Math.floor(w * 0.22) - targetW / 2,
+        x: Math.floor(w * targetSpacing[0]) - targetW / 2,
         y: baseY,
         w: targetW,
         h: targetH,
       },
-      { type: "pcb", label: "PCB Tray", x: Math.floor(w * 0.46) - targetW / 2, y: baseY, w: targetW, h: targetH },
-      { type: "glass", label: "Glass Rack", x: Math.floor(w * 0.65) - targetW / 2, y: baseY, w: targetW, h: targetH },
-      { type: "box", label: "Pallet (Box)", x: Math.floor(w * 0.84) - targetW / 2, y: baseY, w: targetW, h: targetH },
+      { type: "pcb", label: "PCB Tray", x: Math.floor(w * targetSpacing[1]) - targetW / 2, y: baseY, w: targetW, h: targetH },
+      { type: "glass", label: "Glass Rack", x: Math.floor(w * targetSpacing[2]) - targetW / 2, y: baseY, w: targetW, h: targetH },
+      { type: "box", label: "Pallet (Box)", x: Math.floor(w * targetSpacing[3]) - targetW / 2, y: baseY, w: targetW, h: targetH },
     ]
 
-    // Reset lifter bounds a bit below the top
-    const gripW = Math.max(smallScreen ? 56 : 72, Math.floor(w * 0.09 * lifterScale))
+    // Reset lifter bounds a bit below the top - sesuaikan dengan target size yang lebih kecil
+    const gripW = Math.max(
+      isIOSSmall && !isFullscreen ? 50 : (isIOSSmall ? 65 : (smallScreen ? 60 : 72)), 
+      Math.floor(w * (isIOS && !isFullscreen ? 0.075 : (isIOS ? 0.095 : 0.09)) * lifterScale * canvasScale)
+    )
     const gripH = Math.floor(gripW * 0.43)
     lifterRef.current.w = gripW
     lifterRef.current.h = gripH
-    lifterRef.current.y = Math.floor(h * 0.12)
-    lifterRef.current.x = Math.floor(w * 0.14)
+    lifterRef.current.y = Math.floor(h * (isIOS && !isFullscreen ? 0.06 : (isIOS ? 0.08 : 0.12)))
+    lifterRef.current.x = Math.floor(w * (isIOS && !isFullscreen ? 0.08 : (isIOS ? 0.10 : 0.14)))
     lifterTargetRef.current = { x: lifterRef.current.x, y: lifterRef.current.y }
     anchorXRef.current = lifterRef.current.x + lifterRef.current.w / 2
-  }, [isFullscreen])
+  }, [isFullscreen, isIOS])
 
   // Resize canvas responsively
   useEffect(() => {
@@ -797,22 +844,26 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
 
     const getAdaptiveDpr = (w: number, h: number) => {
       const devDpr = Math.max(1, window.devicePixelRatio || 1)
-      // Base caps: stricter on mobile, stricter when fullscreen
-      const cap = isMobile
+      // Base caps: lebih generous untuk iOS agar terlihat crisp
+      const cap = isIOS
+        ? (isFullscreen ? 1.5 : 2.0)
+        : isMobile
         ? (isFullscreen ? 1.0 : 1.25)
         : (isFullscreen ? 1.5 : 2.0)
       let dpr = Math.min(devDpr, cap)
 
-      // Pixel budget to avoid fill-rate bottlenecks
-      const budget = isMobile
+      // Pixel budget to avoid fill-rate bottlenecks - lebih besar untuk iOS
+      const budget = isIOS
+        ? (isFullscreen ? 2.5e6 : 2.0e6)
+        : isMobile
         ? (isFullscreen ? 1.6e6 : 1.3e6)
         : (isFullscreen ? 3.2e6 : 2.2e6)
       const px = w * h * dpr * dpr
       if (px > budget) {
         dpr = Math.sqrt(budget / (w * h))
       }
-      // Reasonable floor to keep text readable
-      return Math.max(0.75, Math.min(dpr, cap))
+      // Reasonable floor to keep text readable - lebih tinggi untuk iOS
+      return Math.max(isIOS ? 1.0 : 0.75, Math.min(dpr, cap))
     }
 
     const onResize = () => {
@@ -831,13 +882,14 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
           }
         } else {
           const viewportH = window.innerHeight
-          const maxH = Math.floor(viewportH * (isMobile ? 0.7 : 0.62))
+          // Berikan lebih banyak ruang untuk iOS tetapi tetap proporsional
+          const maxH = Math.floor(viewportH * (isIOS ? 0.82 : (isMobile ? 0.75 : 0.62)))
           if (h > maxH) {
             h = maxH
             w = Math.floor((h * 16) / 9)
           }
-          // Ensure a reasonable minimum height on mobile so canvas tidak terlalu kecil
-          const minH = isMobile ? 240 : 0
+          // Minimum height yang optimal untuk iOS agar tidak terlalu besar
+          const minH = isIOS ? 350 : (isMobile ? 280 : 0)
           if (h < minH) {
             h = minH
             // keep aspect; don't exceed container width
@@ -909,7 +961,7 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
       ro.disconnect()
       if (resizeRafRef.current) cancelAnimationFrame(resizeRafRef.current)
     }
-  }, [isMobile, isFullscreen, setupLevel])
+  }, [isMobile, isFullscreen, setupLevel, isIOS])
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -1361,10 +1413,12 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
       ctx.fillStyle = "rgba(0,0,0,0.55)"
       ctx.fillRect(0, 0, width, height)
       ctx.fillStyle = "#fff"
-      ctx.font = "700 28px system-ui, -apple-system, Segoe UI, Roboto, sans-serif"
+      const mainFontSize = isIOS ? 32 : 28
+      const scoreFontSize = isIOS ? 24 : 20
+      ctx.font = `700 ${mainFontSize}px system-ui, -apple-system, Segoe UI, Roboto, sans-serif`
       ctx.textAlign = "center"
       ctx.fillText("Waktu Habis!", width / 2, height / 2 - 8)
-      ctx.font = "600 20px system-ui, -apple-system, Segoe UI, Roboto, sans-serif"
+      ctx.font = `600 ${scoreFontSize}px system-ui, -apple-system, Segoe UI, Roboto, sans-serif`
       ctx.fillText(`Skor: ${gameRef.current.score}`, width / 2, height / 2 + 24)
     }
 
@@ -1472,12 +1526,15 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
       }
     }
 
-    // labels
+    // labels - lebih besar untuk iOS
     ctx.fillStyle = "#111827"
-    ctx.font = "600 12px system-ui, -apple-system, Segoe UI, Roboto, sans-serif"
+    const fontSize = isIOS ? 14 : 12
+    ctx.font = `600 ${fontSize}px system-ui, -apple-system, Segoe UI, Roboto, sans-serif`
     ctx.textAlign = "center"
-    ctx.fillText(`for ${t.type.toUpperCase()}`, t.x + t.w / 2, t.y - 14)
-    ctx.fillText(t.label, t.x + t.w / 2, t.y - 2)
+    const offsetY1 = isIOS ? -16 : -14
+    const offsetY2 = isIOS ? -3 : -2
+    ctx.fillText(`for ${t.type.toUpperCase()}`, t.x + t.w / 2, t.y + offsetY1)
+    ctx.fillText(t.label, t.x + t.w / 2, t.y + offsetY2)
 
     ctx.restore()
   }
@@ -1673,11 +1730,15 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
         zIndex: 9999,
         backgroundColor: 'var(--background)',
         ...(isIOS && {
-          // Additional iOS-specific styles to hide Safari UI
+          // Additional iOS-specific styles to hide Safari UI and handle safe areas
           minHeight: '100vh',
           minWidth: '100vw',
           overflow: 'hidden',
-          WebkitOverflowScrolling: 'touch'
+          WebkitOverflowScrolling: 'touch',
+          paddingTop: 'env(safe-area-inset-top, 0px)',
+          paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+          paddingLeft: 'env(safe-area-inset-left, 0px)',
+          paddingRight: 'env(safe-area-inset-right, 0px)'
         })
       } : undefined}
     >
@@ -1920,7 +1981,7 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
         
         {/* Show mobile controls below canvas on mobile (non-fullscreen) */}
         {isMobile && !isFullscreen && (
-          <div className="mt-3 p-2">
+          <div className={`${isIOS ? 'mt-2 p-3' : 'mt-3 p-2'}`}>
             <MobileControls vacuumActive={vacuumState} onDirChange={handleDirChange} onVacuum={handleVacuum} />
           </div>
         )}
