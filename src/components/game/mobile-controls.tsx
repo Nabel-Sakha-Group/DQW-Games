@@ -18,7 +18,7 @@ function Joystick({ onVector }: { onVector: (dx: number, dy: number) => void }) 
   // Deteksi iOS dan iPad untuk ukuran yang lebih besar
   const ua = typeof navigator !== 'undefined' ? navigator.userAgent : ''
   const isIOS = /iPad|iPhone|iPod/.test(ua)
-  const isIPad = /iPad/i.test(ua) || (/Macintosh/i.test(ua) && 'ontouchstart' in window)
+  const isIPad = typeof window !== 'undefined' ? (/iPad/i.test(ua) || (/Macintosh/i.test(ua) && 'ontouchstart' in window)) : /iPad/i.test(ua)
   const radius = isIPad ? 60 : (isIOS ? 50 : 42) // iPad terbesar, iPhone sedang, Android kecil
   const dead = 4  // Deadzone kecil untuk analog
   const vecRef = useRef<{x:number;y:number}>({x:0,y:0})

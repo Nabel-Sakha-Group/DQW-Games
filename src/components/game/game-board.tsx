@@ -96,24 +96,25 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
 
   // Function untuk mendeteksi device type
   const detectDeviceType = useCallback(() => {
-    const userAgent = navigator.userAgent.toLowerCase()
-    const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0
-    const hasPhysicalKeyboard = window.matchMedia('(hover: hover) and (pointer: fine)').matches
-    const screenWidth = window.screen.width
-    const screenHeight = window.screen.height
+    // Guard for SSR: navigator and window aren't available on server
+    const ua = typeof navigator !== 'undefined' ? navigator.userAgent.toLowerCase() : ''
+    const isTouchDevice = typeof window !== 'undefined' && ('ontouchstart' in window || (navigator && navigator.maxTouchPoints > 0))
+    const hasPhysicalKeyboard = typeof window !== 'undefined' && window.matchMedia ? window.matchMedia('(hover: hover) and (pointer: fine)').matches : true
+    const screenWidth = typeof window !== 'undefined' ? window.screen.width : 1024
+    const screenHeight = typeof window !== 'undefined' ? window.screen.height : 768
     const smallScreen = Math.min(screenWidth, screenHeight) <= 768
-    const pixelRatio = window.devicePixelRatio || 1
+    const pixelRatio = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1
     
     // Deteksi iPad/tablet (touch device dengan screen besar)
     const isTablet = isTouchDevice && Math.min(screenWidth, screenHeight) > 768
     
     // Deteksi iPad khusus
-    const isIPad = /ipad|macintosh/i.test(userAgent) && isTouchDevice
+  const isIPad = (/ipad|macintosh/i.test(ua) && isTouchDevice) || false
     
     // Deteksi mobile device berdasarkan multiple criteria
     const isMobileDevice = (
       // User agent detection (smartphone/mobile)
-      /android.*mobile|webos|iphone|ipod|blackberry|iemobile|opera mini|mobile/i.test(userAgent) ||
+      /android.*mobile|webos|iphone|ipod|blackberry|iemobile|opera mini|mobile/i.test(ua) ||
       // Touch device dengan screen kecil (smartphone)
       (isTouchDevice && smallScreen && !isTablet) ||
       // Tidak ada hover capability dan screen kecil
@@ -121,7 +122,7 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
     )
     
     console.log('Device detection:', {
-      userAgent: userAgent.substring(0, 50) + '...',
+      userAgent: (ua || '').substring(0, 50) + '...',
       isTouchDevice,
       hasPhysicalKeyboard,
       screenWidth,
@@ -148,14 +149,14 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
 
   // iOS detection for better handling
   const isIOS = useMemo(() => {
-    return /iPad|iPhone|iPod/.test(navigator.userAgent) || 
-           (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+    const ua = typeof navigator !== 'undefined' ? navigator.userAgent : ''
+    return /iPad|iPhone|iPod/.test(ua) || (typeof navigator !== 'undefined' && navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
   }, [])
 
   // iPad specific detection (covers iPadOS which may report MacIntel)
   const isIPad = useMemo(() => {
-    const ua = navigator.userAgent || ''
-    const touch = 'ontouchstart' in window || navigator.maxTouchPoints > 0
+    const ua = typeof navigator !== 'undefined' ? navigator.userAgent : ''
+    const touch = typeof window !== 'undefined' && ('ontouchstart' in window || (navigator && navigator.maxTouchPoints > 0))
     return /ipad/i.test(ua) || (/macintosh/i.test(ua) && touch)
   }, [])
 

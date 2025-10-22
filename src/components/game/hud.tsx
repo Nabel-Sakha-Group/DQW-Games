@@ -16,7 +16,7 @@ export function HUD({ score, timeLeft, holding, onToggleFullscreen, isFullscreen
   // Deteksi iOS untuk styling khusus
   const ua = typeof navigator !== 'undefined' ? navigator.userAgent : ''
   const isIOS = /iPad|iPhone|iPod/.test(ua)
-  const isIPad = /iPad/i.test(ua) || (/Macintosh/i.test(ua) && 'ontouchstart' in window)
+  const isIPad = typeof window !== 'undefined' ? (/iPad/i.test(ua) || (/Macintosh/i.test(ua) && 'ontouchstart' in window)) : /iPad/i.test(ua)
 
   // Smaller HUD for phones only (iOS phone). iPad gets a slightly bigger HUD even when not fullscreen
   const isSmallCanvas = !isIPad && isIOS && !isFullscreen
