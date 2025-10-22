@@ -704,14 +704,20 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
         if (needsMobileControls || isIPad) {
           // Scroll agar canvas dan controls area terlihat sempurna
           const gameArea = wrapper || canvas
-          gameArea.scrollIntoView({ 
-            behavior: 'smooth', 
-            block: 'start',
-            inline: 'center'
-          })
-          
-          // Re-focus setelah scroll
-          setTimeout(() => canvas.focus(), 500)
+          // On tablets/iPad, center the game area and nudge a bit so embedded controls remain visible
+          if (isIPad && !isFullscreen) {
+            gameArea.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' })
+            // Small upward nudge so bottom-anchored controls remain fully visible
+            setTimeout(() => {
+              try { window.scrollBy({ top: -80, left: 0, behavior: 'smooth' }) } catch { /* ignore */ }
+              // Re-focus after small adjustment
+              setTimeout(() => canvas.focus(), 300)
+            }, 300)
+          } else {
+            // Phones: keep previous behavior (top-aligned)
+            gameArea.scrollIntoView({ behavior: 'smooth', block: 'start', inline: 'center' })
+            setTimeout(() => canvas.focus(), 500)
+          }
         }
       }, 100)
     }
@@ -765,7 +771,7 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
         return prev - 1
       })
     }, 1000)
-  }, [spawnItem, requestFullscreenAndLock, isIOS, needsMobileControls, isIPad])
+  }, [spawnItem, requestFullscreenAndLock, isIOS, needsMobileControls, isIPad, isFullscreen])
   
   // Restart game function
   const restartGame = useCallback(() => {
@@ -1848,9 +1854,9 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
     >
       <div className={isFullscreen ? "h-full w-full flex flex-col" : (isIPad ? "mx-0 max-w-none bg-background overflow-hidden" : "mx-auto max-w-6xl rounded-lg border bg-background shadow-lg overflow-hidden p-2")}>
         <div className={`relative overflow-hidden isolate ${isFullscreen ? "flex-1 bg-background w-full" : (isIPad ? "bg-background min-h-[80vh] w-full" : "rounded-md bg-muted/30")}`}>
-          <canvas 
-            ref={canvasRef} 
-            className={`block transition-all duration-200 ${isFullscreen ? "h-full w-full bg-background" : (isIPad ? "w-full h-full bg-background min-h-[80vh]" : "w-full rounded-md bg-background border-2 border-border/20")} focus:outline-none focus:ring-2 focus:ring-blue-500/50`}
+          <canvas
+            ref={canvasRef}
+            className={`block transition-all duration-200 ${isFullscreen ? "h-full w-full bg-background" : (isIPad ? "w-full bg-background min-h-[60vh] max-h-[66vh]" : "w-full rounded-md bg-background border-2 border-border/20")} focus:outline-none focus:ring-2 focus:ring-blue-500/50`}
             tabIndex={0}
             onTouchStart={(e) => {
               // Prevent scroll when touching canvas during game
@@ -1880,6 +1886,15 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
               touchAction: started && !gameOver ? 'none' : 'auto'
             }}
           />
+          {/* Embed mobile controls inside the canvas container for compact layout on small screens */}
+          {/* Embedded overlay only for iPad/tablet (compact look) */}
+          {!isFullscreen && isIPad && (
+            <div className="absolute left-0 right-0 bottom-0 z-40 pointer-events-none">
+              <div className="pointer-events-auto w-full flex items-center justify-between px-6 pb-4">
+                <MobileControls overlay vacuumActive={vacuumState} onDirChange={handleDirChange} onVacuum={handleVacuum} />
+              </div>
+            </div>
+          )}
           {/* Start overlay */}
           {!started && countdown === null && !gameOver && (
             <div className="absolute inset-0 z-20 flex items-center justify-center bg-background/70 backdrop-blur-sm pointer-events-auto p-4">
@@ -2154,8 +2169,9 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
           </div>
         )}
         
-        {/* Show mobile controls below canvas on touch devices including iPad (non-fullscreen) */}
-        {needsMobileControls && !isFullscreen && (
+        {/* Legacy bottom controls removed — controls are embedded inside the canvas container for compact layout on mobile/iPad */}
+        {/* Phone-only bottom controls (non-fullscreen) */}
+        {needsMobileControls && !isFullscreen && !isIPad && (
           <div className={`${isIOS ? 'mt-2 p-3' : 'mt-3 p-2'}`}>
             <MobileControls vacuumActive={vacuumState} onDirChange={handleDirChange} onVacuum={handleVacuum} />
           </div>

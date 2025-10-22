@@ -140,13 +140,13 @@ export default function MobileControls({ onDirChange, onVacuum, overlay, vacuumA
   return (
     <div className={`pointer-events-auto flex w-full items-center justify-between ${
       overlay 
-        ? `max-w-none mx-0 px-0 pb-1 ${isIPad ? 'gap-6' : (isIOS ? 'gap-4' : 'gap-3')}` 
+        ? (isIPad ? `max-w-none mx-0 px-6 pb-3 gap-7` : `max-w-none mx-0 px-2 pb-1 ${isIOS ? 'gap-4' : 'gap-3'}`) 
         : `max-w-lg mx-auto mt-2 px-2 ${isIPad ? 'gap-7' : (isIOS ? 'gap-6' : 'gap-4')}`
     }`}>
-      <div className={`flex items-center gap-3 ${isIPad ? '-ml-4' : '-ml-2'}`}>
+      <div className={`flex items-center gap-3 ${isIPad ? '-ml-2' : '-ml-2'}`}>
         <Joystick onVector={(dx, dy) => applyVector(dx, dy)} />
       </div>
-      <div className={`flex flex-1 justify-end ${isIPad ? '-mr-4' : '-mr-2'}`}>
+      <div className={`flex flex-1 justify-end ${isIPad ? '-mr-2' : '-mr-2'}`}>
         <button 
           className={`relative rounded-full border-3 font-semibold text-white shadow-xl transition-all duration-300 focus:outline-none focus:ring-4 active:scale-90 touch-manipulation ${
             isIPad ? 'h-28 w-28' : (isIOS ? 'h-24 w-24' : 'h-20 w-20')
