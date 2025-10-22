@@ -14,10 +14,12 @@ type Props = {
 
 export function HUD({ score, timeLeft, holding, onToggleFullscreen, isFullscreen, displayMode, onToggleDisplayMode, onRestart, autoDetected }: Props) {
   // Deteksi iOS untuk styling khusus
-  const isIOS = typeof navigator !== 'undefined' && /iPad|iPhone|iPod/.test(navigator.userAgent)
-  
-  // Smaller HUD for iOS non-fullscreen (canvas kecil)
-  const isSmallCanvas = isIOS && !isFullscreen
+  const ua = typeof navigator !== 'undefined' ? navigator.userAgent : ''
+  const isIOS = /iPad|iPhone|iPod/.test(ua)
+  const isIPad = /iPad/i.test(ua) || (/Macintosh/i.test(ua) && 'ontouchstart' in window)
+
+  // Smaller HUD for phones only (iOS phone). iPad gets a slightly bigger HUD even when not fullscreen
+  const isSmallCanvas = !isIPad && isIOS && !isFullscreen
   
   return (
     <div className={`pointer-events-auto flex w-full items-center justify-between rounded-lg bg-background/80 backdrop-blur-sm border border-border/50 shadow-sm ${

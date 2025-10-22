@@ -42,12 +42,14 @@ export default function Page() {
         <h1 className="text-balance text-2xl md:text-3xl font-semibold">Pick & Place Factory</h1>
       </header>
       <section className="mx-auto max-w-6xl px-3 sm:px-4 pb-6 sm:pb-8">
-        <div className="flex flex-col xl:flex-row gap-4 sm:gap-6 items-start justify-center">
+        <div className="flex flex-col xl:flex-row gap-4 sm:gap-6 items-center xl:items-start justify-center">
           <div className="flex-shrink-0 w-full max-w-3xl mx-auto xl:mx-0">
             <GameBoard onLeaderboardUpdate={loadLeaderboard} />
           </div>
-          <div className="w-full xl:w-80 xl:sticky xl:top-4 flex-shrink-0 mx-auto xl:mx-0">
-            <Leaderboard entries={entries} />
+          <div className="w-full xl:w-80 xl:sticky xl:top-4 flex-shrink-0 flex justify-center xl:justify-start">
+            <div className="w-full max-w-sm">
+              <Leaderboard entries={entries} />
+            </div>
           </div>
         </div>
       </section>

@@ -15,9 +15,11 @@ function Joystick({ onVector }: { onVector: (dx: number, dy: number) => void }) 
   const [dragging, setDragging] = useState(false)
   const [pos, setPos] = useState<{x:number;y:number}>({x:0,y:0})
   const [active, setActive] = useState(false)
-  // Deteksi iOS untuk ukuran yang lebih besar
-  const isIOS = typeof navigator !== 'undefined' && /iPad|iPhone|iPod/.test(navigator.userAgent)
-  const radius = isIOS ? 50 : 42 // travel radius lebih besar untuk iOS
+  // Deteksi iOS dan iPad untuk ukuran yang lebih besar
+  const ua = typeof navigator !== 'undefined' ? navigator.userAgent : ''
+  const isIOS = /iPad|iPhone|iPod/.test(ua)
+  const isIPad = /iPad/i.test(ua) || (/Macintosh/i.test(ua) && 'ontouchstart' in window)
+  const radius = isIPad ? 60 : (isIOS ? 50 : 42) // iPad terbesar, iPhone sedang, Android kecil
   const dead = 4  // Deadzone kecil untuk analog
   const vecRef = useRef<{x:number;y:number}>({x:0,y:0})
   const rafRef = useRef<number | null>(null)
@@ -62,7 +64,7 @@ function Joystick({ onVector }: { onVector: (dx: number, dy: number) => void }) 
     <div
       ref={areaRef}
       className={`relative select-none touch-none rounded-full bg-gradient-to-b from-muted/70 to-muted/40 backdrop-blur-sm border border-border shadow-inner ${
-        isIOS ? 'h-32 w-32' : 'h-28 w-28'
+        isIPad ? 'h-36 w-36' : (isIOS ? 'h-32 w-32' : 'h-28 w-28')
       }`}
       style={{ touchAction: 'none' as React.CSSProperties['touchAction'], WebkitTouchCallout: 'none', WebkitUserSelect: 'none' }}
       onContextMenu={(e) => e.preventDefault()}
@@ -131,21 +133,23 @@ export default function MobileControls({ onDirChange, onVacuum, overlay, vacuumA
   }, [onDirChange])
 
   // Deteksi iOS untuk styling khusus
-  const isIOS = typeof navigator !== 'undefined' && /iPad|iPhone|iPod/.test(navigator.userAgent)
+  const ua = typeof navigator !== 'undefined' ? navigator.userAgent : ''
+  const isIOS = /iPad|iPhone|iPod/.test(ua)
+  const isIPad = /iPad/i.test(ua) || (/Macintosh/i.test(ua) && 'ontouchstart' in window)
 
   return (
     <div className={`pointer-events-auto flex w-full items-center justify-between ${
       overlay 
-        ? `max-w-none mx-0 px-4 pb-2 ${isIOS ? 'gap-6' : 'gap-4'}` 
-        : `max-w-lg mx-auto mt-2 px-2 ${isIOS ? 'gap-6' : 'gap-4'}`
+        ? `max-w-none mx-0 px-0 pb-1 ${isIPad ? 'gap-6' : (isIOS ? 'gap-4' : 'gap-3')}` 
+        : `max-w-lg mx-auto mt-2 px-2 ${isIPad ? 'gap-7' : (isIOS ? 'gap-6' : 'gap-4')}`
     }`}>
-      <div className="flex items-center gap-3">
+      <div className={`flex items-center gap-3 ${isIPad ? '-ml-4' : '-ml-2'}`}>
         <Joystick onVector={(dx, dy) => applyVector(dx, dy)} />
       </div>
-      <div className="flex flex-1 justify-end">
+      <div className={`flex flex-1 justify-end ${isIPad ? '-mr-4' : '-mr-2'}`}>
         <button 
           className={`relative rounded-full border-3 font-semibold text-white shadow-xl transition-all duration-300 focus:outline-none focus:ring-4 active:scale-90 touch-manipulation ${
-            isIOS ? 'h-24 w-24' : 'h-20 w-20'
+            isIPad ? 'h-28 w-28' : (isIOS ? 'h-24 w-24' : 'h-20 w-20')
           } ${
             vacuumActive 
               ? "bg-gradient-to-br from-emerald-500 to-emerald-700 hover:from-emerald-600 hover:to-emerald-800 border-emerald-400 shadow-emerald-500/40 ring-emerald-300" 
@@ -178,12 +182,12 @@ export default function MobileControls({ onDirChange, onVacuum, overlay, vacuumA
           }`}></div>
           
           {/* Image container with better sizing */}
-          <div className={`absolute inset-0 z-10 flex items-center justify-center ${isIOS ? 'p-3' : 'p-2'}`}>
+          <div className={`absolute inset-0 z-10 flex items-center justify-center ${isIPad ? 'p-4' : (isIOS ? 'p-3' : 'p-2')}`}>
             <Image 
               src="/images/logo schmalz.png" 
               alt="Vacuum" 
-              width={isIOS ? 56 : 48}
-              height={isIOS ? 28 : 24}
+              width={isIPad ? 64 : (isIOS ? 56 : 48)}
+              height={isIPad ? 32 : (isIOS ? 28 : 24)}
               className="object-contain filter brightness-0 invert"
             />
           </div>

@@ -85,6 +85,10 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
   }
 
   const isMobile = useMediaQuery()
+  
+  // Custom hook untuk mendeteksi device yang perlu mobile controls (termasuk iPad)
+  const [needsMobileControls, setNeedsMobileControls] = useState(false)
+  
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [showRotateHint, setShowRotateHint] = useState(false)
   const [displayMode, setDisplayMode] = useState<'desktop' | 'mobile'>('desktop')
@@ -100,8 +104,11 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
     const smallScreen = Math.min(screenWidth, screenHeight) <= 768
     const pixelRatio = window.devicePixelRatio || 1
     
-    // Deteksi tablet (touch device dengan screen besar)
+    // Deteksi iPad/tablet (touch device dengan screen besar)
     const isTablet = isTouchDevice && Math.min(screenWidth, screenHeight) > 768
+    
+    // Deteksi iPad khusus
+    const isIPad = /ipad|macintosh/i.test(userAgent) && isTouchDevice
     
     // Deteksi mobile device berdasarkan multiple criteria
     const isMobileDevice = (
@@ -113,9 +120,6 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
       (!hasPhysicalKeyboard && smallScreen)
     )
     
-    // Untuk tablet, cek orientation untuk menentukan mode
-    const isTabletInPortrait = isTablet && window.innerHeight > window.innerWidth
-    
     console.log('Device detection:', {
       userAgent: userAgent.substring(0, 50) + '...',
       isTouchDevice,
@@ -124,13 +128,13 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
       screenHeight,
       smallScreen,
       isTablet,
-      isTabletInPortrait,
+      isIPad,
       pixelRatio,
       isMobileDevice
     })
     
-    // Logic: mobile untuk smartphone, tablet dalam portrait, atau device tanpa keyboard fisik
-    return (isMobileDevice || isTabletInPortrait) ? 'mobile' : 'desktop'
+    // Logic: mobile untuk smartphone, iPad/tablet (karena touch-based), atau device tanpa keyboard fisik
+    return (isMobileDevice || isTablet || isIPad) ? 'mobile' : 'desktop'
   }, [])
   const [countdown, setCountdown] = useState<number | null>(null)
   const [gameOver, setGameOver] = useState(false)
@@ -146,6 +150,13 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
   const isIOS = useMemo(() => {
     return /iPad|iPhone|iPod/.test(navigator.userAgent) || 
            (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+  }, [])
+
+  // iPad specific detection (covers iPadOS which may report MacIntel)
+  const isIPad = useMemo(() => {
+    const ua = navigator.userAgent || ''
+    const touch = 'ontouchstart' in window || navigator.maxTouchPoints > 0
+    return /ipad/i.test(ua) || (/macintosh/i.test(ua) && touch)
   }, [])
 
   // Debug logging for critical state changes (can be removed after testing)
@@ -184,9 +195,9 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
     }
   }, [gameOver, isInputting])
 
-  // Show rotate hint on mobile when in fullscreen but portrait
+  // Show rotate hint on touch devices (including iPad) when in fullscreen but portrait
   const checkRotateHint = useCallback(() => {
-    if (!isMobile) return setShowRotateHint(false)
+    if (!needsMobileControls) return setShowRotateHint(false)
     // For iOS, be more lenient with rotation hints - don't show unless very small screen
     if (isIOS) {
       const isPortrait = window.matchMedia("(orientation: portrait)").matches
@@ -196,11 +207,11 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
       const isSmallScreen = Math.min(screenHeight, screenWidth) < 700
       setShowRotateHint(isPortrait && isSmallScreen)
     } else {
-      // For non-iOS, use original logic
+      // For non-iOS touch devices (Android tablets, etc), use original logic
       const isPortrait = window.matchMedia("(orientation: portrait)").matches
       setShowRotateHint(isPortrait)
     }
-  }, [isMobile, isIOS])
+  }, [needsMobileControls, isIOS])
 
   // HUD state (decoupled from internal refs to avoid excessive re-render)
   const [hud, setHud] = useState<GameState & { holding?: string | null }>(
@@ -216,6 +227,38 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
     right: false,
   })
   const [vacuumState, setVacuumState] = useState(false)
+
+  // Prevent scroll during active gameplay on mobile/tablet
+  useEffect(() => {
+    if (started && !gameOver && (needsMobileControls || isIPad)) {
+      // Focus canvas when game starts
+      const canvas = canvasRef.current
+      if (canvas) {
+        canvas.focus()
+      }
+      
+      // Prevent scroll events during gameplay
+      const preventScroll = (e: Event) => {
+        const target = e.target as HTMLElement
+        // Allow interaction with form elements only
+        if (target && (target.tagName === 'INPUT' || target.tagName === 'BUTTON' || target.tagName === 'TEXTAREA')) {
+          return
+        }
+        e.preventDefault()
+      }
+      
+      // Add scroll prevention listeners
+      document.addEventListener('scroll', preventScroll, { passive: false })
+      document.addEventListener('touchmove', preventScroll, { passive: false })
+      document.addEventListener('wheel', preventScroll, { passive: false })
+      
+      return () => {
+        document.removeEventListener('scroll', preventScroll)
+        document.removeEventListener('touchmove', preventScroll)
+        document.removeEventListener('wheel', preventScroll)
+      }
+    }
+  }, [started, gameOver, needsMobileControls, isIPad])
 
   // Internal refs for mutable game data
   const lifterRef = useRef<Lifter>({
@@ -576,10 +619,13 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
         } catch {}
         setShowRotateHint(false)
       } else {
-        // entering fullscreen - auto-detect device type
+        // entering fullscreen - auto-detect device type, force mobile for iPad
         const detectedMode = detectDeviceType()
         console.log(`Auto-detected device type: ${detectedMode}`)
-        setDisplayMode(detectedMode)
+        console.log(`iPad detected: ${isIPad}`)
+        // Force mobile mode for iPad in fullscreen
+        const finalMode = (detectedMode === 'mobile' || isIPad) ? 'mobile' : detectedMode
+        setDisplayMode(finalMode)
         setAutoDetected(true) // Mark as auto-detected
         checkRotateHint()
       }
@@ -591,7 +637,10 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
       setIsFullscreen(true)
       const detectedMode = detectDeviceType()
       console.log(`Auto-detected device type: ${detectedMode}`)
-      setDisplayMode(detectedMode)
+      console.log(`iPad detected: ${isIPad}`)
+      // Force mobile mode for iPad in fullscreen
+      const finalMode = (detectedMode === 'mobile' || isIPad) ? 'mobile' : detectedMode
+      setDisplayMode(finalMode)
       setAutoDetected(true)
       checkRotateHint()
     }
@@ -620,7 +669,7 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
         canvas.removeEventListener("webkitendfullscreen", webkitExitHandler)
       }
     }
-  }, [checkRotateHint, detectDeviceType, isIOS])
+  }, [checkRotateHint, detectDeviceType, isIOS, isIPad])
 
   // Auto-detect device type on component mount
   useEffect(() => {
@@ -628,7 +677,10 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
     console.log(`Initial device detection: ${detectedMode}`)
     setDisplayMode(detectedMode)
     setAutoDetected(true) // Mark as auto-detected
-  }, [detectDeviceType])
+    
+    // Update needsMobileControls for touch devices (including iPad)
+    setNeedsMobileControls(detectedMode === 'mobile' || isIPad)
+  }, [detectDeviceType, isIPad])
 
   // (removed countdown useEffect - game over now goes directly to input form)
 
@@ -637,6 +689,37 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
   // Start game with countdown
   const startGameWithCountdown = useCallback(() => {
     setCountdown(3)
+    
+    // Auto-focus canvas untuk menghindari scroll issues
+    const canvas = canvasRef.current
+    const wrapper = wrapperRef.current
+    
+    if (canvas) {
+      canvas.focus()
+      canvas.setAttribute('tabindex', '0')
+      
+      // Pastikan canvas visible dengan scroll ke posisi optimal
+      setTimeout(() => {
+        if (needsMobileControls || isIPad) {
+          // Scroll agar canvas dan controls area terlihat sempurna
+          const gameArea = wrapper || canvas
+          gameArea.scrollIntoView({ 
+            behavior: 'smooth', 
+            block: 'start',
+            inline: 'center'
+          })
+          
+          // Re-focus setelah scroll
+          setTimeout(() => canvas.focus(), 500)
+        }
+      }, 100)
+    }
+    
+    // Lock scroll pada mobile/tablet saat game aktif
+    if (needsMobileControls || isIPad) {
+      document.body.style.overflow = 'hidden'
+      document.documentElement.style.overflow = 'hidden'
+    }
     
     // Auto fullscreen saat game start - reset auto-detect untuk re-detect device
     setAutoDetected(true) 
@@ -661,6 +744,15 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
           console.log('🎮 startGame - clearing game over state')
           setGameOver(false)
           gameOverFiredRef.current = false
+          
+          // Final auto-focus setelah game dimulai
+          setTimeout(() => {
+            const canvas = canvasRef.current
+            if (canvas) {
+              canvas.focus()
+              console.log('🎯 Canvas focused after game start')
+            }
+          }, 100)
           // spawn a couple items immediately so conveyor isn't empty
           spawnItem()
           if (Math.random() < 0.6) spawnItem()
@@ -672,12 +764,17 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
         return prev - 1
       })
     }, 1000)
-  }, [spawnItem, requestFullscreenAndLock, isIOS])
+  }, [spawnItem, requestFullscreenAndLock, isIOS, needsMobileControls, isIPad])
   
   // Restart game function
   const restartGame = useCallback(() => {
     console.log('🔄 restartGame called - clearing game over state')
     console.trace('restartGame stack trace:')
+    
+    // Restore scroll saat restart
+    document.body.style.overflow = ''
+    document.documentElement.style.overflow = ''
+    
     setGameOver(false)
     setStarted(false)
     setCountdown(null)
@@ -736,6 +833,11 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
     
     // Reset all states
     console.log('💾 saveScore - resetting game state after save')
+    
+    // Restore scroll setelah save
+    document.body.style.overflow = ''
+    document.documentElement.style.overflow = ''
+    
     setGameOver(false)
     setName("")
     setPerusahaan("")
@@ -784,14 +886,15 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
     beltFracRef.current = isFullscreen ? 0.06 : (isIOS && !isFullscreen ? 0.055 : (isIOS ? 0.065 : 0.05))
     itemScaleRef.current = isFullscreen ? 1.1 : (isIOS && !isFullscreen ? 1.0 : (isIOS ? 1.3 : 1.0))
 
-    conveyorRef.current.y = Math.floor(h * (isIOS && !isFullscreen ? 0.68 : (isIOS ? 0.70 : 0.72)))
+  conveyorRef.current.y = Math.floor(h * (isIPad && !isFullscreen ? 0.66 : (isIOS && !isFullscreen ? 0.68 : (isIOS ? 0.70 : 0.72))))
 
     // Penyesuaian khusus untuk iOS - target boxes lebih kecil di canvas kecil untuk proporsi yang pas
     const smallScreen = w < 500
     const isIOSSmall = isIOS && w < 430 // iPhone 13 width is ~390px
     
-    // Scaling yang berbeda untuk fullscreen vs non-fullscreen
-    const canvasScale = isFullscreen ? 1.0 : (isIOS ? 0.7 : 1.0)
+  // Scaling yang berbeda untuk fullscreen vs non-fullscreen
+  // iPad should get a larger canvasScale (use more of viewport) than phones
+  const canvasScale = isFullscreen ? 1.0 : (isIPad ? 1.0 : (isIOS ? 0.75 : 1.0))
     
     const targetW = Math.max(
       isIOSSmall && !isFullscreen ? 60 : (isIOSSmall ? 80 : (smallScreen ? 70 : 100)), 
@@ -834,7 +937,7 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
     lifterRef.current.x = Math.floor(w * (isIOS && !isFullscreen ? 0.08 : (isIOS ? 0.10 : 0.14)))
     lifterTargetRef.current = { x: lifterRef.current.x, y: lifterRef.current.y }
     anchorXRef.current = lifterRef.current.x + lifterRef.current.w / 2
-  }, [isFullscreen, isIOS])
+  }, [isFullscreen, isIOS, isIPad])
 
   // Resize canvas responsively
   useEffect(() => {
@@ -882,14 +985,14 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
           }
         } else {
           const viewportH = window.innerHeight
-          // Berikan lebih banyak ruang untuk iOS tetapi tetap proporsional
-          const maxH = Math.floor(viewportH * (isIOS ? 0.82 : (isMobile ? 0.75 : 0.62)))
+          // Berikan lebih banyak ruang untuk iPad/iOS tetapi tetap proporsional
+          const maxH = Math.floor(viewportH * (isIPad ? 0.92 : (isIOS ? 0.82 : (isMobile ? 0.75 : 0.62))))
           if (h > maxH) {
             h = maxH
             w = Math.floor((h * 16) / 9)
           }
-          // Minimum height yang optimal untuk iOS agar tidak terlalu besar
-          const minH = isIOS ? 350 : (isMobile ? 280 : 0)
+          // Minimum height yang optimal untuk iPad/iOS
+          const minH = isIPad ? 420 : (isIOS ? 350 : (isMobile ? 280 : 0))
           if (h < minH) {
             h = minH
             // keep aspect; don't exceed container width
@@ -961,7 +1064,7 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
       ro.disconnect()
       if (resizeRafRef.current) cancelAnimationFrame(resizeRafRef.current)
     }
-  }, [isMobile, isFullscreen, setupLevel, isIOS])
+  }, [isMobile, isFullscreen, setupLevel, isIOS, isIPad])
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -1742,15 +1845,67 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
         })
       } : undefined}
     >
-      <div className={isFullscreen ? "h-full w-full flex flex-col" : "mx-auto max-w-6xl rounded-lg border bg-background shadow-lg overflow-hidden p-2"}>
-        <div className={`relative overflow-hidden isolate ${isFullscreen ? "flex-1 bg-background w-full" : "rounded-md bg-muted/30"}`}>
-          <canvas ref={canvasRef} className={`block ${isFullscreen ? "h-full w-full bg-background" : "w-full rounded-md bg-background border-2 border-border/20"}`} />
+      <div className={isFullscreen ? "h-full w-full flex flex-col" : (isIPad ? "mx-0 max-w-none bg-background overflow-hidden" : "mx-auto max-w-6xl rounded-lg border bg-background shadow-lg overflow-hidden p-2")}>
+        <div className={`relative overflow-hidden isolate ${isFullscreen ? "flex-1 bg-background w-full" : (isIPad ? "bg-background min-h-[80vh] w-full" : "rounded-md bg-muted/30")}`}>
+          <canvas 
+            ref={canvasRef} 
+            className={`block transition-all duration-200 ${isFullscreen ? "h-full w-full bg-background" : (isIPad ? "w-full h-full bg-background min-h-[80vh]" : "w-full rounded-md bg-background border-2 border-border/20")} focus:outline-none focus:ring-2 focus:ring-blue-500/50`}
+            tabIndex={0}
+            onTouchStart={(e) => {
+              // Prevent scroll when touching canvas during game
+              if (started && !gameOver) {
+                e.preventDefault()
+                const canvas = canvasRef.current
+                if (canvas) {
+                  canvas.focus()
+                  console.log('🎯 Canvas focused via touch')
+                }
+              }
+            }}
+            onPointerDown={() => {
+              // Auto focus canvas when clicked during game
+              if (started && !gameOver) {
+                const canvas = canvasRef.current
+                if (canvas) {
+                  canvas.focus()
+                  console.log('🎯 Canvas focused via click')
+                }
+              }
+            }}
+            onFocus={() => {
+              console.log('🎯 Canvas received focus')
+            }}
+            style={{
+              touchAction: started && !gameOver ? 'none' : 'auto'
+            }}
+          />
           {/* Start overlay */}
           {!started && countdown === null && !gameOver && (
             <div className="absolute inset-0 z-20 flex items-center justify-center bg-background/70 backdrop-blur-sm pointer-events-auto p-4">
               <button
                 className="rounded-md bg-blue-600 text-white px-6 py-3 text-base font-semibold shadow hover:bg-blue-700 focus:outline-none"
-                onClick={startGameWithCountdown}
+                onClick={() => {
+                  // Auto focus ke canvas dan scroll ke game area
+                  const canvas = canvasRef.current
+                  const wrapper = wrapperRef.current
+                  
+                  if (canvas && wrapper) {
+                    // Focus canvas terlebih dahulu
+                    canvas.focus()
+                    
+                    // Scroll smooth ke game area pada mobile/tablet
+                    if (needsMobileControls || isIPad) {
+                      wrapper.scrollIntoView({ 
+                        behavior: 'smooth', 
+                        block: 'center',
+                        inline: 'center'
+                      })
+                    }
+                  }
+                  
+                  // Jalankan countdown setelah focus
+                  startGameWithCountdown()
+                }}
               >
                 Start Game
               </button>
@@ -1969,25 +2124,44 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
             </div>
           )}
         </div>
-        {/* Mobile controls in fullscreen - show based on displayMode and not during game over or countdown */}
-        {isFullscreen && displayMode === 'mobile' && !gameOver && (
-          <div className="pointer-events-none absolute inset-0 z-20 flex items-end justify-between p-2">
+        {/* Mobile controls in fullscreen - always show for iPad when fullscreen */}
+        {(() => {
+          // For iPad: always show in fullscreen (except during countdown or game over screen)
+          if (isIPad && isFullscreen && countdown === null && !gameOver) {
+            console.log('🍎 iPad fullscreen controls: showing (simple condition)', { isIPad, isFullscreen, countdown, gameOver })
+            return true
+          }
+          
+          // For other devices: use existing logic
+          const shouldShowControls = isFullscreen && (displayMode === 'mobile' || needsMobileControls) && !gameOver && countdown === null && started
+          console.log('🎮 Other mobile controls render check:', {
+            isFullscreen,
+            displayMode,
+            needsMobileControls,
+            gameOver,
+            countdown,
+            started,
+            shouldShowControls
+          })
+          return shouldShowControls
+        })() && (
+          <div className="pointer-events-none absolute inset-0 z-50 flex items-end justify-stretch px-0 pb-0">
             {/* we re-render controls as overlay with pointer events enabled only on inner */}
-            <div className="pointer-events-auto w-full">
+            <div className="pointer-events-auto w-full max-w-none">
               <MobileControls overlay vacuumActive={vacuumState} onDirChange={handleDirChange} onVacuum={handleVacuum} />
             </div>
           </div>
         )}
         
-        {/* Show mobile controls below canvas on mobile (non-fullscreen) */}
-        {isMobile && !isFullscreen && (
+        {/* Show mobile controls below canvas on touch devices including iPad (non-fullscreen) */}
+        {needsMobileControls && !isFullscreen && (
           <div className={`${isIOS ? 'mt-2 p-3' : 'mt-3 p-2'}`}>
             <MobileControls vacuumActive={vacuumState} onDirChange={handleDirChange} onVacuum={handleVacuum} />
           </div>
         )}
         
         {/* Show desktop controls below canvas on desktop (non-fullscreen) */}
-        {!isMobile && !isFullscreen && (
+        {!needsMobileControls && !isFullscreen && (
           <div className="mt-3 flex justify-center p-2">
             <DesktopControls 
               keys={keyStates} 
@@ -2001,7 +2175,7 @@ export default function GameBoard({ onLeaderboardUpdate }: { onLeaderboardUpdate
         {/* Tips only show when not in fullscreen */}
         {!isFullscreen && (
           <div className="mt-3 px-3 pb-2 text-xs opacity-70 text-center">
-            {isMobile
+            {needsMobileControls
               ? "Tips: Gunakan tombol kontrol untuk menggerakkan lifter. Tekan Vacuum untuk mengambil/melepas item."
               : "Tips: Gunakan Arrow Keys/WASD untuk gerak, Spacebar untuk Vacuum. Letakkan item di target yang sesuai."}
           </div>

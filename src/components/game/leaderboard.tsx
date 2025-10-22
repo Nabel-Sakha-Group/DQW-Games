@@ -11,9 +11,9 @@ export type LeaderboardEntry = {
 
 export function Leaderboard({ entries }: { entries: LeaderboardEntry[] }) {
   return (
-    <div className="rounded-lg border bg-background shadow-sm w-full max-w-sm">
+    <div className="rounded-lg border bg-background shadow-sm w-full max-w-sm mx-auto">
       <div className="border-b bg-muted/30 p-4 rounded-t-lg">
-        <h2 className="font-semibold text-lg">Leaderboard</h2>
+        <h2 className="font-semibold text-lg text-center sm:text-left">Leaderboard</h2>
       </div>
       <div className="p-4">
         <ol className="space-y-2">
